@@ -1,0 +1,13 @@
+name: ghslc
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3
+  - pyyaml
+  - rasterio
+  - GDAL
+  - numpy
+  - pillow
+  - scipy
+  - scikit-image
