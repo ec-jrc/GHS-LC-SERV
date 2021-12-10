@@ -1,5 +1,6 @@
 from typing import Iterable, List
 from pathlib import Path
+import zipfile
 from osgeo import gdal
 import rasterio
 from rasterio.enums import Resampling
@@ -33,14 +34,18 @@ def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> Non
         the complete filename to use for the resulting VRT
     """
 
-    jp2s_all = filename_safe.rglob('*.jp2')
+    if filename_safe.suffix == '.zip':
+        with zipfile.ZipFile(filename_safe) as zf:
+            jp2s_all = [f'/vsizip/{filename_safe}/{zip_file}' for zip_file in zf.namelist() if zip_file.endswith('.jp2')]
+    else:
+        jp2s_all = filename_safe.rglob('*.jp2')
 
     if pixres == 10:
         bands = ['B02', 'B03', 'B04', 'B08']
     else:
         bands = ['B05', 'B06', 'B07', 'B11', 'B12', 'B8A']
 
-    jp2s = [str(jp2) for jp2 in jp2s_all for band in bands if band in jp2.name]
+    jp2s = [str(jp2) for jp2 in jp2s_all for band in bands if f'{band}.jp2' in jp2]
 
     gdal.BuildVRT(
         destName=str(out_vrt),
