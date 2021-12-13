@@ -1,6 +1,10 @@
 import pytest
+import sys
+sys.path.append('..')
+
 import yaml
 import requests
+import git
 from ghslc import ghslc
 from pathlib import Path
 import hashlib
@@ -16,7 +20,9 @@ def hash_file(filename):
 
 @pytest.fixture
 def cgls_data():
-    cgls_config = Path('../../training_CGLS.yml')
+    repo = git.Repo('', search_parent_directories=True)
+    repo_root = repo.working_tree_dir
+    cgls_config = Path(repo_root) / 'training_CGLS.yml'
     with open(cgls_config) as conf:
         cgls = yaml.safe_load(conf)
 
@@ -28,6 +34,7 @@ def cgls_data():
 
     # download the file if missing
     if not cgls_file.exists():
+        cgls_file.parent.mkdir(parents=True, exist_ok=True)
         r = requests.get(cgls['url'])
         with open(cgls_file, 'wb') as f:
             f.write(r.content)
@@ -37,9 +44,10 @@ def cgls_data():
 
 
 def test_class_generate(cgls_data):
-    rootpath = Path('./data')
+    repo = git.Repo('', search_parent_directories=True)
+    repo_root = repo.working_tree_dir
 
-    training_config = Path('../../training_CGLS.yml')
+    training_config = Path(repo_root) / 'training_CGLS.yml'
     classes = [
         80,  # Permanent water bodies
         70,  # Snow and Ice
@@ -58,7 +66,7 @@ def test_class_generate(cgls_data):
     )
     print('S2 data: {}'.format(granule))
 
-    workspace_safe = Path(rootpath) / Path(granule).stem
+    workspace_safe = Path(repo_root) / 'test' / 'data' / Path(granule).stem
     workspace_safe.mkdir(parents=True, exist_ok=True)
     print('Workspace: {}'.format(workspace_safe))
 

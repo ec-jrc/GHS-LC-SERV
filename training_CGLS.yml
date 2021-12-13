@@ -5,7 +5,7 @@
 #  - absolute path (e.g. C:\Users\maffelu.ISIS\Downloads\PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif)
 #  - relative path to the YAML file location (e.g.  ./data/training/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif)
 # by default it is stored in  the github local repository at ./ghslc/test/data/training
-filename: ./ghslc/test/data/training/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif
+filename: ./test/data/training/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif
 
 url: https://zenodo.org/record/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif?download=1
 classes:
