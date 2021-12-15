@@ -25,7 +25,11 @@ setup(
         'scikit-image',
     ],
     setup_requires=['pytest-runner'],
-    tests_require=['pytest', 'gitpython'],
+    tests_require=[
+        'pytest',
+        'gitpython',
+        'requests',
+    ],
     license='GPLv3',
     classifiers=[
         'Development Status :: 3 - Alpha',
