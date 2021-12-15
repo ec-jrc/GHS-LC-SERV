@@ -12,7 +12,7 @@ from skimage.morphology import binary_erosion
 from scipy.ndimage import gaussian_filter
 import warnings
 import yaml
-from tqdm import tqdm
+
 
 # set GDAL the python way
 gdal.UseExceptions()
@@ -732,7 +732,7 @@ def generate_composite(tiffiles: List[str], vrtfile: Path, outfile: Path, outfil
     data_phi = np.zeros(shape=(dst_height, dst_width), dtype=np.uint8)
 
     with rasterio.Env(GDAL_CACHEMAX=512):
-        for filename in tqdm(files_class):
+        for filename in files_class:
             path_phi = filename.replace('.tif', '_phi.tif')
 
             # find maximum values and indexes for phi values
