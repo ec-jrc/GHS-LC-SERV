@@ -435,13 +435,13 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
             raise KeyError(f'Class {cl} is not a valid class in the configuration file')
 
     # deal with relative path (from the YAML path location)
-    if training['filename'].startswith('.'):
-        training_filepath = training_config.parent / training['filename']
+    if training['filepath']:
+        training_file = Path(training['filepath']) / training['filename']
     else:
-        training_filepath = Path(training['filename'])
+        training_file = Path(training['filename'])
 
     train_cgls = read_ancillary_data(
-        filename_ancillary=str(training_filepath),
+        filename_ancillary=str(training_file),
         crs=crs,
         bounds=bounds,
         width=width,

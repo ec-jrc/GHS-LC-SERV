@@ -1,12 +1,11 @@
 # Copernicus Global Land Service: Land Cover 100m: version 3.0.1
 # https://land.copernicus.eu/global/products/lc
 
-# path can be:
-#  - absolute path (e.g. C:\Users\maffelu.ISIS\Downloads\PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif)
-#  - relative path to the YAML file location (e.g.  ./data/training/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif)
-# by default it is stored in  the github local repository at ./ghslc/test/data/training
-filename: ./test/data/training/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif
-
+# filepath can be absolute (e.g. /tmp/data), or relative to this file location (e.g. ./data), or null
+# by default it is stored in the github local repository at ./test/data/training
+filepath: ./test/data/training
+filename: PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif
+md5: 6898fbe3fb46a1110cd65e3a81ed7624
 url: https://zenodo.org/record/3939050/files/PROBAV_LC100_global_v3.0.1_2019-nrt_Discrete-Classification-map_EPSG-4326.tif?download=1
 classes:
     0: "No input data available"
