@@ -1,9 +1,9 @@
-import setuptools
+from setuptools import setup, find_packages
 
-with open('README.md', 'r', encoding='utf-8') as fh:
-    long_description = fh.read()
+with open('README.md', 'r', encoding='utf-8') as readme:
+    long_description = readme.read()
 
-setuptools.setup(
+setup(
     name='ghslc',
     version='0.0.1',
     author='Luca Maffenini',
@@ -12,9 +12,28 @@ setuptools.setup(
     long_description=long_description,
     long_description_content_type='text/markdown',
     url='https://github.com/ec-jrc/GHS-LC-SERV',
+    packages=find_packages(
+        include=['ghslc', 'ghslc.*']
+    ),
+    install_requires=[
+        'PyYAML',
+        'rasterio',
+        'GDAL',
+        'numpy',
+        'pillow',
+        'scipy',
+        'scikit-image',
+    ],
     setup_requires=['pytest-runner'],
     tests_require=['pytest', 'gitpython'],
-    # license='GPL v3',
-    # packages=['toolbox'],
-    # install_requires=['requests'],
+    license='GPLv3',
+    classifiers=[
+        'Development Status :: 3 - Alpha',
+        'Environment :: Console',
+        'Intended Audience :: Science/Research',
+        'License :: OSI Approved :: GNU General Public License v3 (GPLv3)',
+        'Programming Language :: Python :: 3',
+        'Topic :: Scientific/Engineering :: GIS',
+        'Topic :: Scientific/Engineering :: Image Processing',
+    ]
 )
