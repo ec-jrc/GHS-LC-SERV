@@ -18,6 +18,9 @@ import yaml
 gdal.UseExceptions()
 gdal.SetConfigOption('GDAL_CACHEMAX', '512')
 
+# set print as standard log method
+logs = print
+
 
 def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> None:
     """
@@ -132,7 +135,7 @@ def threshold_otsu(image: np.ndarray) -> int:
     return scale_thresh
 
 
-def read_ancillary_data(filename_ancillary: str, crs: str, bounds: Iterable[float],
+def read_ancillary_data(filename_ancillary: Path, crs: str, bounds: Iterable[float],
                         width: int, height: int) -> np.ndarray:
     """
     Read ancillary dataset as numpy array using a target spatial extent
@@ -153,10 +156,13 @@ def read_ancillary_data(filename_ancillary: str, crs: str, bounds: Iterable[floa
     """
 
     # create dataset in memory
-    filename_memory = '/vsimem/ancillary.tif'
+    # filename_memory = '/vsimem/ancillary.tif'
+    logs(f'Ancillary file: {filename_ancillary}')
+    filename_memory = filename_ancillary.parent / 'ancillary.tif'
+    logs(f'Warped ancillary: {filename_memory}')
     gdal.Warp(
-        filename_memory,
-        filename_ancillary,
+        str(filename_memory),
+        str(filename_ancillary),
         format='GTiff',
         dstSRS=crs,
         outputBounds=bounds,
@@ -186,7 +192,7 @@ def data_quantile(datafile: Path, domain_a: np.ndarray, domain_b: np.ndarray, nl
 
     """
 
-    print('Quantile data with levels: {}'.format(nlevels))
+    logs('Quantile data with levels: {}'.format(nlevels))
 
     with rasterio.open(datafile) as src:
         data = src.read()
@@ -208,7 +214,7 @@ def data_quantile(datafile: Path, domain_a: np.ndarray, domain_b: np.ndarray, nl
     with rasterio.open(dst_file_a, 'w', **profile) as dst_a:
         with rasterio.open(dst_file_b, 'w', **profile) as dst_b:
             for i, band in enumerate(data, start=1):
-                print('quantile band: {}'.format(i))
+                logs('quantile band: {}'.format(i))
 
                 q_min_a = np.quantile(band[domain_a], low_q, interpolation='lower')
                 q_max_a = np.quantile(band[domain_a], high_q, interpolation='higher')
@@ -283,7 +289,7 @@ def sml_minimal_support_multiple_quantization(datafile: Path, levels: int, minim
     datastack_quantized = []
 
     for i, quant in enumerate(multiple_quantization, start=1):
-        print('encode sequence {} with quantization: {}'.format(i, quant))
+        logs('encode sequence {} with quantization: {}'.format(i, quant))
         layer_quantized = np.floor(np.divide(datastack, quant, dtype=np.double))
         data_sequenced = sml_sequence_encode(layer_quantized, levels)
 
@@ -415,7 +421,7 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
         width = src.width
         height = src.height
 
-    print('Read CGLS training_config')
+    logs('Read CGLS training_config')
     with open(training_config) as tc:
         training = yaml.safe_load(tc)
 
@@ -441,7 +447,7 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
         training_file = Path(training['filename'])
 
     train_cgls = read_ancillary_data(
-        filename_ancillary=str(training_file),
+        filename_ancillary=training_file,
         crs=crs,
         bounds=bounds,
         width=width,
@@ -452,7 +458,7 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
     trunc = np.ceil(2 * sigma) / sigma
 
     for cl, layer in zip(classes, layers):
-        print(f'produce inference for abstraction class with codes: {cl}')
+        logs(f'produce inference for abstraction class with codes: {cl}')
         train_mask = np.isin(train_cgls, cl)
         if train_mask.any():
             phi_a, phi_b = sml_minimal_support_multiple_quantization_phi(
@@ -467,7 +473,7 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
 
         sc_phi = gaussian_filter(phi, sigma=sigma, truncate=trunc)
 
-        print(f'save to file: {layer}')
+        logs(f'save to file: {layer}')
         with rasterio.open(layer, 'w', **profile) as band:
             band.write(sc_phi, 1)
 
@@ -618,25 +624,25 @@ def generate_class(filesafe: Path, workspace: Path, training: Path, classes: Lis
             - class B phi
     """
 
-    print('Generate class at resolution: {}'.format(pixres))
+    logs('Generate class at resolution: {}'.format(pixres))
 
-    print('Create scratch folder')
+    logs('Create scratch folder')
     scratch = workspace / 'scratch'
     scratch.mkdir(exist_ok=True)
 
-    print('Create vrt with pixel resolution: 10m')
+    logs('Create vrt with pixel resolution: 10m')
     vrt_10m_file = scratch / f'{filesafe.stem}_bands_10m.vrt'
     read_s2_bands_as_vrt(filename_safe=filesafe, pixres=10, out_vrt=vrt_10m_file)
 
-    print('Split in two domains: A and B')
+    logs('Split in two domains: A and B')
     # this is always done with the 10m data
     domain_a, domain_b = split_domain(filename=vrt_10m_file, pixres=pixres)
 
-    print('Create vrt with pixel resolution: 20m')
+    logs('Create vrt with pixel resolution: 20m')
     vrt_20m_file = scratch / f'{filesafe.stem}_bands_20m.vrt'
     read_s2_bands_as_vrt(filename_safe=filesafe, pixres=20, out_vrt=vrt_20m_file)
 
-    print('Read vrt data')
+    logs('Read vrt data')
     if pixres == 10:
         main_vrt = vrt_10m_file
     else:
@@ -676,9 +682,9 @@ def process_domain(datafile: Path, suffix: str, dataquant_file: Path, domain: np
         the complete path where to write results
     """
 
-    print('Process domain: {}'.format(suffix))
+    logs('Process domain: {}'.format(suffix))
 
-    print('Sequence data encoding minimal-support multiple-quantization')
+    logs('Sequence data encoding minimal-support multiple-quantization')
     # list of quantization values: 1 2 4 8 16 32 64 128
     quantizations = np.power(2, np.arange(8))
     domain_minsupp, datastack_mulquan = sml_minimal_support_multiple_quantization(
@@ -688,12 +694,12 @@ def process_domain(datafile: Path, suffix: str, dataquant_file: Path, domain: np
         multiple_quantization=quantizations,
     )
 
-    print('Compute multiple-class multiple-abstraction classification')
+    logs('Compute multiple-class multiple-abstraction classification')
     datastack_class_file = s2_multiple_classification(
         datafile=datafile, suffix=suffix, domain_valid=domain, domain_solved=domain_minsupp, datastack=datastack_mulquan,
         training_config=training, classes=classes, output=output)
 
-    print('Reconciling to a discrete CLASS')
+    logs('Reconciling to a discrete CLASS')
     out_class_file, out_class_phi_file = search_maxima(
         filename=datastack_class_file, domain_valid=domain, levels=256, output=output.parent,
     )
@@ -807,14 +813,14 @@ def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: 
 
 
 def generate_composites(files_20m: List[str], files_10m: List[str], output_path: Path) -> None:
-    print('Build VRT 20m')
+    logs('Build VRT 20m')
     # Get AOI bounds
     # create a vrt with all files_10m at 10m
     # TODO: use all files_10m, some files_10m are skipped because of different projections
     vrtfile_20m = output_path / 'S2CG_AOI_20m_py.vrt'
     gdal.BuildVRT(str(vrtfile_20m), files_20m)
 
-    print('Generate composite 20m')
+    logs('Generate composite 20m')
     composite_20m = output_path / 'composite_S2_CLASS_20m.tif'
     composite_20m_phi = output_path / 'composite_S2_CLASS_20m_phi.tif'
     generate_composite(
@@ -824,7 +830,7 @@ def generate_composites(files_20m: List[str], files_10m: List[str], output_path:
         outfilephi=composite_20m_phi,
     )
 
-    print('Upsample data 20m to 10m')
+    logs('Upsample data 20m to 10m')
     composite_20m_to_10m = output_path / 'composite_S2_CLASS_20m_to_10m.tif'
     upsampling_20m_to_10m(
         filename=composite_20m,
@@ -832,7 +838,7 @@ def generate_composites(files_20m: List[str], files_10m: List[str], output_path:
         resampling='nearest',
     )
 
-    print('Upsample phi 20m to 10m')
+    logs('Upsample phi 20m to 10m')
     composite_20m_to_10m_phi = output_path / 'composite_S2_CLASS_20m_to_10m_phi.tif'
     upsampling_20m_to_10m(
         filename=composite_20m_phi,
@@ -840,11 +846,11 @@ def generate_composites(files_20m: List[str], files_10m: List[str], output_path:
         resampling='bilinear',
     )
 
-    print('Build VRT 10m')
+    logs('Build VRT 10m')
     vrtfile_10m = output_path / 'S2CG_AOI_10m_py.vrt'
     gdal.BuildVRT(str(vrtfile_10m), files_10m)
 
-    print('Generate composite 10m')
+    logs('Generate composite 10m')
     composite_10m = output_path / 'composite_S2_CLASS_10m.tif'
     composite_10m_phi = output_path / 'composite_S2_CLASS_10m_phi.tif'
     generate_composite(
@@ -854,7 +860,7 @@ def generate_composites(files_20m: List[str], files_10m: List[str], output_path:
         outfilephi=composite_10m_phi,
     )
 
-    print('Merge in composite ALL')
+    logs('Merge in composite ALL')
     composite_all = output_path / 'composite_S2_CLASS_ALL.tif'
     composite_all_phi = output_path / 'composite_S2_CLASS_ALL_phi.tif'
     generate_composite_all(
