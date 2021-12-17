@@ -5,7 +5,7 @@ from osgeo import gdal
 import rasterio
 from rasterio.enums import Resampling
 from rasterio.vrt import WarpedVRT
-import affine
+from affine import Affine
 import numpy as np
 from PIL import Image
 from skimage.morphology import binary_erosion
@@ -39,7 +39,9 @@ def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> Non
 
     if filename_safe.suffix == '.zip':
         with zipfile.ZipFile(filename_safe) as zf:
-            jp2s_all = [f'/vsizip/{filename_safe}/{zip_file}' for zip_file in zf.namelist() if zip_file.endswith('.jp2')]
+            jp2s_all = [
+                f'/vsizip/{filename_safe}/{zip_file}' for zip_file in zf.namelist() if zip_file.endswith('.jp2')
+            ]
     else:
         jp2s_all = [str(file) for file in filename_safe.rglob('*.jp2')]
 
@@ -155,23 +157,24 @@ def read_ancillary_data(filename_ancillary: Path, crs: str, bounds: Iterable[flo
         the ancillary data warped and clip as a numpy array
     """
 
-    # create dataset in memory
-    # filename_memory = '/vsimem/ancillary.tif'
-    logs(f'Ancillary file: {filename_ancillary}')
-    filename_memory = filename_ancillary.parent / 'ancillary.tif'
-    logs(f'Warped ancillary: {filename_memory}')
-    gdal.Warp(
-        str(filename_memory),
-        str(filename_ancillary),
-        format='GTiff',
-        dstSRS=crs,
-        outputBounds=bounds,
-        width=width,
-        height=height,
-    )
+    # Output image transform
+    left, bottom, right, top = bounds
+    xres = (right - left) / width
+    yres = (top - bottom) / height
+    dst_transform = Affine(xres, 0.0, left,
+                           0.0, -yres, top)
 
-    with rasterio.open(filename_memory) as src:
-        data = src.read(1)
+    vrt_options = {
+        'resampling': Resampling.nearest,
+        'crs': crs,
+        'transform': dst_transform,
+        'height': height,
+        'width': width,
+    }
+
+    with rasterio.open(filename_ancillary) as src:
+        with WarpedVRT(src, **vrt_options) as vrt:
+            data = vrt.read(1)
 
     return data
 
@@ -190,6 +193,8 @@ def data_quantile(datafile: Path, domain_a: np.ndarray, domain_b: np.ndarray, nl
     :param nlevels: int
         the number of levels used to quantile
 
+    :param output: Path
+        the complete path where to write results
     """
 
     logs('Quantile data with levels: {}'.format(nlevels))
@@ -440,9 +445,13 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
         if cl not in training['classes']:
             raise KeyError(f'Class {cl} is not a valid class in the configuration file')
 
-    # deal with relative path (from the YAML path location)
     if training['filepath']:
-        training_file = Path(training['filepath']) / training['filename']
+        if training['filepath'].startswith('.'):
+            # build relative path from YAML file location
+            training_file = training_config.parent / training['filepath'] / training['filename']
+        else:
+            # build absolute path
+            training_file = Path(training['filepath']) / training['filename']
     else:
         training_file = Path(training['filename'])
 
@@ -696,8 +705,8 @@ def process_domain(datafile: Path, suffix: str, dataquant_file: Path, domain: np
 
     logs('Compute multiple-class multiple-abstraction classification')
     datastack_class_file = s2_multiple_classification(
-        datafile=datafile, suffix=suffix, domain_valid=domain, domain_solved=domain_minsupp, datastack=datastack_mulquan,
-        training_config=training, classes=classes, output=output)
+        datafile=datafile, suffix=suffix, domain_valid=domain, domain_solved=domain_minsupp,
+        datastack=datastack_mulquan, training_config=training, classes=classes, output=output)
 
     logs('Reconciling to a discrete CLASS')
     out_class_file, out_class_phi_file = search_maxima(
@@ -720,8 +729,8 @@ def generate_composite(tiffiles: List[str], vrtfile: Path, outfile: Path, outfil
     left, bottom, right, top = dst_bounds
     xres = (right - left) / dst_width
     yres = (top - bottom) / dst_height
-    dst_transform = affine.Affine(xres, 0.0, left,
-                                  0.0, -yres, top)
+    dst_transform = Affine(xres, 0.0, left,
+                           0.0, -yres, top)
 
     vrt_options = {
         'resampling': Resampling.nearest,

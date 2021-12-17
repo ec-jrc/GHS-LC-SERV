@@ -1,13 +1,12 @@
 import pytest
-import sys
-sys.path.append('..')
-
 import yaml
 import requests
 import git
 from ghslc import ghslc
 from pathlib import Path
 import hashlib
+import sys
+sys.path.append('..')
 
 
 def hash_file(filename):
@@ -27,8 +26,11 @@ def cgls_data():
         cgls = yaml.safe_load(conf)
 
     # This is the same file used in training_CGLS.yml
-    if cgls['filename'].startswith('.'):
-        cgls_file = cgls_config.parent / cgls['filename']
+    if cgls['filepath']:
+        if cgls['filepath'].startswith('.'):
+            cgls_file = cgls_config.parent / cgls['filepath'] / cgls['filename']
+        else:
+            cgls_file = Path(cgls['filepath']) / cgls['filename']
     else:
         cgls_file = Path(cgls['filename'])
 
@@ -77,10 +79,10 @@ def test_class_generate(cgls_data):
         classes=classes,
         pixres=10,
     )
-    assert hash_file(results_10m_class[0]) == 'b7b27c6609657b894224287c1430b798'
-    assert hash_file(results_10m_class[1]) == '857e9df4b8f9276c54cc53fb1daeb6d0'
-    assert hash_file(results_10m_class[2]) == '6caa7e85a56514d3454717f47d172d1e'
-    assert hash_file(results_10m_class[3]) == 'ad1774572dbbecc5f18d45b86aa89401'
+    assert hash_file(results_10m_class[0]) == '93f4d86d0ef622afde1a9491edf61910'
+    assert hash_file(results_10m_class[1]) == '6a306013099a5f39eaa7ad4c0b1cb6e2'
+    assert hash_file(results_10m_class[2]) == '236cbf81564ca941ee46660d97c087c5'
+    assert hash_file(results_10m_class[3]) == 'f2075dbc7d5aaabf2594299b73b27d87'
 
     results_20m_class = ghslc.generate_class(
         filesafe=granule,
@@ -89,7 +91,7 @@ def test_class_generate(cgls_data):
         classes=classes,
         pixres=20,
     )
-    assert hash_file(results_20m_class[0]) == '5e58c55af2d7fdd873c52beaeb4883c9'
-    assert hash_file(results_20m_class[1]) == '1d5a966e1a2d9eafaa15b94abc14a5c0'
-    assert hash_file(results_20m_class[2]) == '3c223310527f6c3121fb16c2c4901e68'
-    assert hash_file(results_20m_class[3]) == 'e02b1be1ef00b74e0d93c5a49b6ea3a4'
+    assert hash_file(results_20m_class[0]) == '44c71cd9d41aba6f17ea8071e135a3e1'
+    assert hash_file(results_20m_class[1]) == 'fb53ee76799c970676fc38064cbd4212'
+    assert hash_file(results_20m_class[2]) == 'b1d4274951c15ee2b6fe9f5bd4529605'
+    assert hash_file(results_20m_class[3]) == '437dbef70b2d52bfd37b2ccc9977b5ab'
