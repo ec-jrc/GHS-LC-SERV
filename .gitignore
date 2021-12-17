@@ -1,3 +1,4 @@
 .idea
 .eggs
+__pycache__/
 test/data
