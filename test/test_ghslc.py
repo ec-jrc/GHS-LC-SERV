@@ -5,6 +5,7 @@ import git
 from ghslc import ghslc
 from pathlib import Path
 import hashlib
+from concurrent.futures import ProcessPoolExecutor
 import sys
 sys.path.append('..')
 
@@ -63,34 +64,29 @@ def test_class_generate(cgls_data):
     ]
 
     # S2 data
-    granule = Path(
-        'U:/SRS/Copernicus/S2/scenes/source/L1C/2019/12/10/022/S2A_MSIL1C_20191210T101411_N0208_R022_T32TQM_20191210T104357.SAFE'
-    )
+    granule = Path(repo_root) / 'test/data/S2A_MSIL1C_20191210T101411_N0208_R022_T32TQM_20191210T104357.SAFE'
     print('S2 data: {}'.format(granule))
 
-    workspace_safe = Path(repo_root) / 'test' / 'data' / Path(granule).stem
+    workspace_safe = granule.parent / granule.stem
     workspace_safe.mkdir(parents=True, exist_ok=True)
     print('Workspace: {}'.format(workspace_safe))
 
-    results_10m_class = ghslc.generate_class(
-        filesafe=granule,
-        workspace=workspace_safe,
-        training=training_config,
-        classes=classes,
-        pixres=10,
-    )
+    params = [
+        (granule, workspace_safe, training_config, classes, 'A', 10),
+        (granule, workspace_safe, training_config, classes, 'B', 10),
+        (granule, workspace_safe, training_config, classes, 'A', 20),
+        (granule, workspace_safe, training_config, classes, 'B', 20),
+    ]
+    with ProcessPoolExecutor(max_workers=4) as executor:
+        results = [res for res in executor.map(ghslc.generate_class, *zip(*params))]
+    results_10m_class = [item for sublist in results[:2] for item in sublist]
+    results_20m_class = [item for sublist in results[2:] for item in sublist]
+
     assert hash_file(results_10m_class[0]) == '93f4d86d0ef622afde1a9491edf61910'
     assert hash_file(results_10m_class[1]) == '6a306013099a5f39eaa7ad4c0b1cb6e2'
     assert hash_file(results_10m_class[2]) == '236cbf81564ca941ee46660d97c087c5'
     assert hash_file(results_10m_class[3]) == 'f2075dbc7d5aaabf2594299b73b27d87'
 
-    results_20m_class = ghslc.generate_class(
-        filesafe=granule,
-        workspace=workspace_safe,
-        training=training_config,
-        classes=classes,
-        pixres=20,
-    )
     assert hash_file(results_20m_class[0]) == '44c71cd9d41aba6f17ea8071e135a3e1'
     assert hash_file(results_20m_class[1]) == 'fb53ee76799c970676fc38064cbd4212'
     assert hash_file(results_20m_class[2]) == 'b1d4274951c15ee2b6fe9f5bd4529605'

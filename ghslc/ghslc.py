@@ -13,13 +13,95 @@ from scipy.ndimage import gaussian_filter
 import warnings
 import yaml
 
-
 # set GDAL the python way
 gdal.UseExceptions()
 gdal.SetConfigOption('GDAL_CACHEMAX', '512')
 
 # set print as standard log method
 logs = print
+
+
+def generate_classification(filesafe: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
+    """
+    Generate classification results at 10 and 20 meters for both domains A and B
+
+    :param filesafe: Path
+        the complete filename of the Sentinel 2 data. It can be a .SAFE folder or a zip file
+    :param workspace: Path
+        the complete path where to store results
+    :param training: Path
+        the absolute path to the training_config configuration file
+    :param classes: List[int]
+        the list of classes to extract from data
+
+    :return: Iterable[Path]
+        the complete path to all classified results saved on disk
+    """
+
+    cl_a_10m_file, phi_a_10m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
+                                                   classes=classes, suffix='A', pixres=10)
+
+    cl_b_10m_file, phi_b_10m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
+                                                   classes=classes, suffix='B', pixres=10)
+
+    cl_a_20m_file, phi_a_20m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
+                                                   classes=classes, suffix='A', pixres=20)
+
+    cl_b_20m_file, phi_b_20m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
+                                                   classes=classes, suffix='B', pixres=20)
+
+    return (cl_a_10m_file, phi_a_10m_file, cl_b_10m_file, phi_b_10m_file,
+            cl_a_20m_file, phi_a_20m_file, cl_b_20m_file, phi_b_20m_file)
+
+
+def generate_class(filesafe: Path, workspace: Path, training: Path, classes: List[int], suffix: str, pixres: int,
+                   ) -> (Path, Path):
+    """
+
+    :param filesafe: Path
+        the complete filename of the Sentinel 2 data. It can be a .SAFE folder or a zip file
+    :param workspace: Path
+        the complete path where to store results
+    :param training: Path
+        the absolute path to the training_config configuration file
+    :param classes: List[int]
+        the list of classes to extract from data
+    :param suffix: str
+        the letter of the processing domain: A or B
+    :param pixres: int
+        the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
+
+    :return: (Path, Path)
+        the complete path to the classified file and the phi value file
+    """
+
+    logs('Create scratch folder')
+    scratch = workspace / 'scratch'
+    scratch.mkdir(exist_ok=True)
+
+    logs('Create vrt with pixel resolution: 10m')
+    vrt_10m_file = scratch / f'{filesafe.stem}_bands_10m.vrt'
+    if not vrt_10m_file.exists():
+        read_s2_bands_as_vrt(filename_safe=filesafe, pixres=10, out_vrt=vrt_10m_file)
+
+    logs('Create vrt with pixel resolution: 20m')
+    vrt_20m_file = scratch / f'{filesafe.stem}_bands_20m.vrt'
+    if not vrt_20m_file.exists():
+        read_s2_bands_as_vrt(filename_safe=filesafe, pixres=20, out_vrt=vrt_20m_file)
+
+    logs(f'Split in two domains and get domain: {suffix}')
+    # this is always done with the 10m data
+    domain = split_domain(filename=vrt_10m_file, suffix=suffix, pixres=pixres)
+
+    if pixres == 10:
+        main_vrt = vrt_10m_file
+    else:
+        main_vrt = vrt_20m_file
+
+    class_file, class_phi_file = process_domain(datafile=main_vrt, suffix=suffix, domain=domain,
+                                                training=training, classes=classes, output=scratch)
+
+    return class_file, class_phi_file
 
 
 def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> None:
@@ -59,17 +141,19 @@ def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> Non
     )
 
 
-def split_domain(filename: Path, pixres: int) -> (np.ndarray, np.ndarray):
+def split_domain(filename: Path, suffix: str, pixres: int) -> np.ndarray:
     """
     Split the data in two domains A and B based on luminance
 
     :param filename: Path
         the filename of the dataset composed by S2 10m bands
+    :param suffix: str
+        the letter of the processing domain: A or B
     :param pixres: int
         the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
 
-    :return: (np.ndarray, np.ndarray)
-        the two domains A and B
+    :return: np.ndarray
+        the chosen domain A or B
     """
 
     with rasterio.open(filename) as vrt:
@@ -82,15 +166,16 @@ def split_domain(filename: Path, pixres: int) -> (np.ndarray, np.ndarray):
     # automatic threshold (OTSU)
     thr_otsu = threshold_otsu(luminance[domain])
 
-    domain_a = np.logical_and(domain, luminance <= thr_otsu)
-    domain_b = np.logical_and(domain, luminance > thr_otsu)
+    if suffix == 'A':
+        domain = np.logical_and(domain, luminance <= thr_otsu)
+    else:
+        domain = np.logical_and(domain, luminance > thr_otsu)
 
     if pixres == 20:
         shape_20m = [int(ds / 2) for ds in domain.shape]
-        domain_a = np.array(Image.fromarray(domain_a).resize(shape_20m, Image.NEAREST))
-        domain_b = np.array(Image.fromarray(domain_b).resize(shape_20m, Image.NEAREST))
+        domain = np.array(Image.fromarray(domain).resize(shape_20m, Image.NEAREST))
 
-    return domain_a, domain_b
+    return domain
 
 
 def threshold_otsu(image: np.ndarray) -> int:
@@ -137,103 +222,107 @@ def threshold_otsu(image: np.ndarray) -> int:
     return scale_thresh
 
 
-def read_ancillary_data(filename_ancillary: Path, crs: str, bounds: Iterable[float],
-                        width: int, height: int) -> np.ndarray:
+def process_domain(datafile: Path, suffix: str, domain: np.ndarray, training: Path, classes: List[int],
+                   output: Path) -> (Path, Path):
     """
-    Read ancillary dataset as numpy array using a target spatial extent
+    Produce classification results for a given domain
 
-    :param filename_ancillary: str
-        the complete filename of the ancillary dataset
-    :param crs: str
-        the target coordinate reference systems
-    :param bounds: Iterable[float]
-        the target spatial extent used to clip
-    :param width: int
-        the target dataset width in number of pixels
-    :param height: int
-        the target dataset height in number of pixels
+    :param datafile: Path
+        the complete filename of the Sentinel 2 data with bands stacked in a vrt
+    :param suffix: str
+        the letter of the procesing domain: A or B
+    :param domain: np.ndarray
+        the given domain, A or B
+    :param training: str
+        the absolute path to the training_config configuration file
+    :param classes: List[int]
+        the list of classes to extract from data
 
-    :return: np.ndarray
-        the ancillary data warped and clip as a numpy array
+    :param output: Path
+        the complete path where to write results
+
+    :return: (Path, Path)
+        the complete path to the classified file and the phi value file
     """
 
-    # Output image transform
-    left, bottom, right, top = bounds
-    xres = (right - left) / width
-    yres = (top - bottom) / height
-    dst_transform = Affine(xres, 0.0, left,
-                           0.0, -yres, top)
+    logs('Process domain: {}'.format(suffix))
 
-    vrt_options = {
-        'resampling': Resampling.nearest,
-        'crs': crs,
-        'transform': dst_transform,
-        'height': height,
-        'width': width,
-    }
+    dataquant_file = data_quantile(datafile=datafile, suffix=suffix, domain=domain, nlevels=256, output=output)
 
-    with rasterio.open(filename_ancillary) as src:
-        with WarpedVRT(src, **vrt_options) as vrt:
-            data = vrt.read(1)
+    logs('Sequence data encoding minimal-support multiple-quantization')
+    # list of quantization values: 1 2 4 8 16 32 64 128
+    quantizations = np.power(2, np.arange(8))
+    domain_minsupp, datastack_mulquan = sml_minimal_support_multiple_quantization(
+        datafile=dataquant_file,
+        levels=256,
+        minimal_support=100,
+        multiple_quantization=quantizations,
+    )
 
-    return data
+    logs('Compute multiple-class multiple-abstraction classification')
+    datastack_class_file = s2_multiple_classification(
+        datafile=datafile, suffix=suffix, domain_valid=domain, domain_solved=domain_minsupp,
+        datastack=datastack_mulquan, training_config=training, classes=classes, output=output)
+
+    logs('Reconciling to a discrete CLASS')
+    out_class_file, out_class_phi_file = search_maxima(
+        filename=datastack_class_file, domain_valid=domain, levels=256, output=output.parent,
+    )
+
+    return out_class_file, out_class_phi_file
 
 
-def data_quantile(datafile: Path, domain_a: np.ndarray, domain_b: np.ndarray, nlevels: int,
-                  output: Path) -> (Path, Path):
+def data_quantile(datafile: Path, suffix: str, domain: np.ndarray, nlevels: int, output: Path) -> Path:
     """
     Quantile data in two domains with in a given number of levels
 
     :param datafile: Path
         the complete filename of the dataset to quantile
-    :param domain_a: np.ndarray
+    :param suffix: str
+        the letter of the procesing domain: A or B
+    :param domain: np.ndarray
         the domain A
-    :param domain_b: np.ndarray
-        the domain B
     :param nlevels: int
         the number of levels used to quantile
 
     :param output: Path
         the complete path where to write results
+
+    :return: Path
+        the complete path to the quantiled data file
     """
 
     logs('Quantile data with levels: {}'.format(nlevels))
 
+    saturation = 0.0001
+    low_q = saturation
+    high_q = 1 - saturation
+
     with rasterio.open(datafile) as src:
-        data = src.read()
-        profile = src.profile
+        profile = src.profile.copy()
         profile.update(
             driver='GTiff',
             compress='lzw',
             dtype=np.uint8,
             blockxsize=256,
             blockysize=256,
+            interleave='band',
         )
 
-    saturation = 0.0001
-    low_q = saturation
-    high_q = 1 - saturation
+        dst_file = output / f'{datafile.stem}_dom{suffix}_quant.tif'
+        logs(f'Save to file: {dst_file}')
+        with rasterio.open(dst_file, 'w', **profile) as dst:
+            for i in src.indexes:
+                logs(f'quantile band: {i}')
+                band = src.read(i)
 
-    dst_file_a = output / f'{datafile.stem}_domA_quant.tif'
-    dst_file_b = output / f'{datafile.stem}_domB_quant.tif'
-    with rasterio.open(dst_file_a, 'w', **profile) as dst_a:
-        with rasterio.open(dst_file_b, 'w', **profile) as dst_b:
-            for i, band in enumerate(data, start=1):
-                logs('quantile band: {}'.format(i))
+                q_min = np.quantile(band[domain], low_q, interpolation='lower')
+                q_max = np.quantile(band[domain], high_q, interpolation='higher')
+                x_norm = np.round(imrscl(data=band, min_value=q_min, max_value=q_max) * (nlevels - 2))
 
-                q_min_a = np.quantile(band[domain_a], low_q, interpolation='lower')
-                q_max_a = np.quantile(band[domain_a], high_q, interpolation='higher')
-                x_norm_a = np.round(imrscl(data=band, min_value=q_min_a, max_value=q_max_a) * (nlevels - 2))
+                dst.write(x_norm, i)
 
-                dst_a.write(x_norm_a, i)
-
-                q_min_b = np.quantile(band[domain_b], low_q, interpolation='lower')
-                q_max_b = np.quantile(band[domain_b], high_q, interpolation='higher')
-                x_norm_b = np.round(imrscl(data=band, min_value=q_min_b, max_value=q_max_b) * (nlevels - 2))
-
-                dst_b.write(x_norm_b, i)
-
-    return dst_file_a, dst_file_b
+    return dst_file
 
 
 def imrscl(data: np.ndarray, min_value: float, max_value: float) -> np.ndarray:
@@ -410,7 +499,7 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
     """
 
     with rasterio.open(datafile) as src:
-        profile = src.profile
+        profile = src.profile.copy()
         profile.update(
             count=1,
             dtype=np.double,
@@ -496,6 +585,48 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
     return datastack_class_file
 
 
+def read_ancillary_data(filename_ancillary: Path, crs: str, bounds: Iterable[float],
+                        width: int, height: int) -> np.ndarray:
+    """
+    Read ancillary dataset as numpy array using a target spatial extent
+
+    :param filename_ancillary: str
+        the complete filename of the ancillary dataset
+    :param crs: str
+        the target coordinate reference systems
+    :param bounds: Iterable[float]
+        the target spatial extent used to clip
+    :param width: int
+        the target dataset width in number of pixels
+    :param height: int
+        the target dataset height in number of pixels
+
+    :return: np.ndarray
+        the ancillary data warped and clip as a numpy array
+    """
+
+    # Output image transform
+    left, bottom, right, top = bounds
+    xres = (right - left) / width
+    yres = (top - bottom) / height
+    dst_transform = Affine(xres, 0.0, left,
+                           0.0, -yres, top)
+
+    vrt_options = {
+        'resampling': Resampling.nearest,
+        'crs': crs,
+        'transform': dst_transform,
+        'height': height,
+        'width': width,
+    }
+
+    with rasterio.open(filename_ancillary) as src:
+        with WarpedVRT(src, **vrt_options) as vrt:
+            data = vrt.read(1)
+
+    return data
+
+
 def sml_minimal_support_multiple_quantization_phi(domain_valid: np.ndarray, domain_solved: np.ndarray,
                                                   datastack: List[np.ndarray],
                                                   training: np.ndarray) -> (np.ndarray, np.ndarray):
@@ -557,6 +688,9 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
 
     :param output: Path
         the complete path where to write results
+
+    :return: (Path, Path)
+        the complete path to the classified file and the phi value file
     """
 
     kernel = np.array([
@@ -567,7 +701,7 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
     nodata_mask = ~binary_erosion(domain_valid, selem=kernel)
 
     with rasterio.open(filename) as src:
-        profile = src.profile
+        profile = src.profile.copy()
         profile.update(
             driver='Gtiff',
             compress='lzw',
@@ -609,121 +743,13 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
     return out_class, out_class_phi
 
 
-def generate_class(filesafe: Path, workspace: Path, training: Path, classes: List[int], pixres: int,
-                   ) -> (Path, Path, Path, Path):
-    """
-    Generate classification results using Sentinel 2 bands selected by pixel resolution
-
-    :param filesafe: Path
-         the complete filename of the Sentinel 2 SAFE product
-    :param workspace: Path
-        the absolute path to the working directory
-    :param training: Path
-        the absolute path to the training_config configuration file
-    :param classes: List[int]
-        the list of classes to extract from data
-    :param pixres: int
-        the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
-
-    :return: (Path, Path, Path, Path)
-        the filenames of generated classification files:
-            - class A
-            - class A phi
-            - class B
-            - class B phi
-    """
-
-    logs('Generate class at resolution: {}'.format(pixres))
-
-    logs('Create scratch folder')
-    scratch = workspace / 'scratch'
-    scratch.mkdir(exist_ok=True)
-
-    logs('Create vrt with pixel resolution: 10m')
-    vrt_10m_file = scratch / f'{filesafe.stem}_bands_10m.vrt'
-    read_s2_bands_as_vrt(filename_safe=filesafe, pixres=10, out_vrt=vrt_10m_file)
-
-    logs('Split in two domains: A and B')
-    # this is always done with the 10m data
-    domain_a, domain_b = split_domain(filename=vrt_10m_file, pixres=pixres)
-
-    logs('Create vrt with pixel resolution: 20m')
-    vrt_20m_file = scratch / f'{filesafe.stem}_bands_20m.vrt'
-    read_s2_bands_as_vrt(filename_safe=filesafe, pixres=20, out_vrt=vrt_20m_file)
-
-    logs('Read vrt data')
-    if pixres == 10:
-        main_vrt = vrt_10m_file
-    else:
-        main_vrt = vrt_20m_file
-
-    data_a_file, data_b_file = data_quantile(datafile=main_vrt, domain_a=domain_a, domain_b=domain_b,
-                                             nlevels=256, output=scratch)
-
-    class_a_file, class_a_phi_file = process_domain(datafile=main_vrt, suffix='A', dataquant_file=data_a_file,
-                                                    domain=domain_a, training=training, classes=classes, output=scratch)
-
-    class_b_file, class_b_phi_file = process_domain(datafile=main_vrt, suffix='B', dataquant_file=data_b_file,
-                                                    domain=domain_b, training=training, classes=classes, output=scratch)
-
-    return class_a_file, class_a_phi_file, class_b_file, class_b_phi_file
-
-
-def process_domain(datafile: Path, suffix: str, dataquant_file: Path, domain: np.ndarray, training: Path,
-                   classes: List[int], output: Path) -> (Path, Path):
-    """
-    Produce classification results for a given domain
-
-    :param datafile: Path
-        the complete filename of the Sentinel 2 data with bands stacked in a vrt
-    :param suffix: str
-        the letter of the procesing domain: A or B
-    :param dataquant_file: str
-        the complete filename of data quantiled using the given domain
-    :param domain: np.ndarray
-        the given domain, A or B
-    :param training: str
-        the absolute path to the training_config configuration file
-    :param classes: List[int]
-        the list of classes to extract from data
-
-    :param output: Path
-        the complete path where to write results
-    """
-
-    logs('Process domain: {}'.format(suffix))
-
-    logs('Sequence data encoding minimal-support multiple-quantization')
-    # list of quantization values: 1 2 4 8 16 32 64 128
-    quantizations = np.power(2, np.arange(8))
-    domain_minsupp, datastack_mulquan = sml_minimal_support_multiple_quantization(
-        datafile=dataquant_file,
-        levels=256,
-        minimal_support=100,
-        multiple_quantization=quantizations,
-    )
-
-    logs('Compute multiple-class multiple-abstraction classification')
-    datastack_class_file = s2_multiple_classification(
-        datafile=datafile, suffix=suffix, domain_valid=domain, domain_solved=domain_minsupp,
-        datastack=datastack_mulquan, training_config=training, classes=classes, output=output)
-
-    logs('Reconciling to a discrete CLASS')
-    out_class_file, out_class_phi_file = search_maxima(
-        filename=datastack_class_file, domain_valid=domain, levels=256, output=output.parent,
-    )
-
-    return out_class_file, out_class_phi_file
-
-
 def generate_composite(tiffiles: List[str], vrtfile: Path, outfile: Path, outfilephi: Path) -> None:
-
     with rasterio.open(vrtfile) as vrt:
         dst_bounds = vrt.bounds
         dst_crs = vrt.crs
         dst_height = vrt.height
         dst_width = vrt.width
-        profile = vrt.profile
+        profile = vrt.profile.copy()
 
     # Output image transform
     left, bottom, right, top = dst_bounds
