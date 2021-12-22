@@ -67,18 +67,18 @@ def test_class_generate(cgls_data):
     granule = Path(repo_root) / 'test/data/S2A_MSIL1C_20191210T101411_N0208_R022_T32TQM_20191210T104357.SAFE'
     print('S2 data: {}'.format(granule))
 
-    workspace_safe = granule.parent / granule.stem
-    workspace_safe.mkdir(parents=True, exist_ok=True)
-    print('Workspace: {}'.format(workspace_safe))
+    workspace = granule.parent
+    print('Workspace: {}'.format(workspace))
 
     params = [
-        (granule, workspace_safe, training_config, classes, 'A', 10),
-        (granule, workspace_safe, training_config, classes, 'B', 10),
-        (granule, workspace_safe, training_config, classes, 'A', 20),
-        (granule, workspace_safe, training_config, classes, 'B', 20),
+        (granule, workspace, training_config, classes, 'A', 10),
+        (granule, workspace, training_config, classes, 'B', 10),
+        (granule, workspace, training_config, classes, 'A', 20),
+        (granule, workspace, training_config, classes, 'B', 20),
     ]
     with ProcessPoolExecutor(max_workers=4) as executor:
         results = [res for res in executor.map(ghslc.generate_class, *zip(*params))]
+
     results_10m_class = [item for sublist in results[:2] for item in sublist]
     results_20m_class = [item for sublist in results[2:] for item in sublist]
 

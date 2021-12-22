@@ -76,18 +76,16 @@ def generate_class(filesafe: Path, workspace: Path, training: Path, classes: Lis
     """
 
     logs('Create scratch folder')
-    scratch = workspace / 'scratch'
-    scratch.mkdir(exist_ok=True)
+    scratch = workspace / f'{filesafe.stem}_scratch' / f'{pixres}m_{suffix}'
+    scratch.mkdir(parents=True, exist_ok=True)
 
     logs('Create vrt with pixel resolution: 10m')
     vrt_10m_file = scratch / f'{filesafe.stem}_bands_10m.vrt'
-    if not vrt_10m_file.exists():
-        read_s2_bands_as_vrt(filename_safe=filesafe, pixres=10, out_vrt=vrt_10m_file)
+    read_s2_bands_as_vrt(filename_safe=filesafe, pixres=10, out_vrt=vrt_10m_file)
 
     logs('Create vrt with pixel resolution: 20m')
     vrt_20m_file = scratch / f'{filesafe.stem}_bands_20m.vrt'
-    if not vrt_20m_file.exists():
-        read_s2_bands_as_vrt(filename_safe=filesafe, pixres=20, out_vrt=vrt_20m_file)
+    read_s2_bands_as_vrt(filename_safe=filesafe, pixres=20, out_vrt=vrt_20m_file)
 
     logs(f'Split in two domains and get domain: {suffix}')
     # this is always done with the 10m data
