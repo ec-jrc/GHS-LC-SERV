@@ -103,7 +103,6 @@ def test_class_composite():
     ghslc.generate_composites(
         files_10m=files_lc_10m,
         files_20m=files_lc_20m,
-        output_path=workspace,
     )
 
     assert True

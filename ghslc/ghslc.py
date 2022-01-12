@@ -793,12 +793,23 @@ def generate_composites(files_20m: List[Path], files_10m: List[Path]) -> (Path, 
 
 def common_extent_mollweide(files_20m: List[Path]):
 
-    bounds_mw = []
+    # restrict the files list to the one with different S2 product names
+    files_20m_unique_s2_names = []
+    s2_names = set()
     for file in files_20m:
+        product_name = "_".join(file.stem.split('_')[:7])
+        if product_name not in s2_names:
+            s2_names.add(product_name)
+            files_20m_unique_s2_names.append(file)
+
+    # extract bbox from files
+    bounds_mw = []
+    for file in files_20m_unique_s2_names:
         with rasterio.open(file) as src:
             with WarpedVRT(src, crs='ESRI:54009') as vrt:
                 bounds_mw.append(vrt.bounds)
 
+    # compute envelope of all bbox
     envelope = BoundingBox(
         left=min([b.left for b in bounds_mw]),
         bottom=min([b.bottom for b in bounds_mw]),
@@ -819,8 +830,8 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
                        0.0, -pixres, top)
 
     vrt_options = {
-        'resampling': Resampling.nearest,
         'crs': 'ESRI:54009',
+        'resampling': Resampling.nearest,
         'transform': transform,
         'height': height,
         'width': width,
