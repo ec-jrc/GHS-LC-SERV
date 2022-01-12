@@ -3,6 +3,8 @@ from pathlib import Path
 import zipfile
 from osgeo import gdal
 import rasterio
+from rasterio.profiles import DefaultGTiffProfile
+from rasterio.coords import BoundingBox
 from rasterio.enums import Resampling
 from rasterio.vrt import WarpedVRT
 from affine import Affine
@@ -741,41 +743,102 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
     return out_class, out_class_phi
 
 
-def generate_composite(tiffiles: List[str], vrtfile: Path, outfile: Path, outfilephi: Path) -> None:
-    with rasterio.open(vrtfile) as vrt:
-        dst_bounds = vrt.bounds
-        dst_crs = vrt.crs
-        dst_height = vrt.height
-        dst_width = vrt.width
-        profile = vrt.profile.copy()
+def generate_composites(files_20m: List[Path], files_10m: List[Path]) -> (Path, Path, Path, Path, Path, Path):
+
+    # Get AOI bounds
+    bounds = common_extent_mollweide(files_20m=files_20m)
+
+    logs('Generate composite 20m')
+    composite_20m, composite_20m_phi = generate_composite(
+        tiffiles=files_20m,
+        pixres=20,
+        bounds=bounds,
+    )
+
+    logs('Upsample data 20m to 10m')
+    composite_20m_to_10m = upsampling_20m_to_10m(
+        filename=composite_20m,
+        resampling='nearest',
+    )
+
+    logs('Upsample phi 20m to 10m')
+    composite_20m_to_10m_phi = upsampling_20m_to_10m(
+        filename=composite_20m_phi,
+        resampling='nearest',
+    )
+
+    # get bounds of data resampled from 20m to 10m as they might be slightly larger due to resampling
+    with rasterio.open(composite_20m_to_10m) as src:
+        bounds_20m = src.bounds
+
+    logs('Generate composite 10m')
+    composite_10m, composite_10m_phi = generate_composite(
+        tiffiles=files_10m,
+        pixres=10,
+        bounds=bounds_20m,
+    )
+
+    logs('Merge in composite ALL')
+    composite_all, composite_all_phi = generate_composite_all(
+        comp10m_data=composite_10m,
+        comp10m_phi=composite_10m_phi,
+        comp20m_data=composite_20m_to_10m,
+        comp20m_phi=composite_20m_to_10m_phi,
+    )
+
+    return (composite_20m, composite_20m_phi,
+            composite_10m, composite_10m_phi,
+            composite_all, composite_all_phi)
+
+
+def common_extent_mollweide(files_20m: List[Path]):
+
+    bounds_mw = []
+    for file in files_20m:
+        with rasterio.open(file) as src:
+            with WarpedVRT(src, crs='ESRI:54009') as vrt:
+                bounds_mw.append(vrt.bounds)
+
+    envelope = BoundingBox(
+        left=min([b.left for b in bounds_mw]),
+        bottom=min([b.bottom for b in bounds_mw]),
+        right=max([b.right for b in bounds_mw]),
+        top=max([b.top for b in bounds_mw]),
+    )
+
+    return envelope
+
+
+def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -> (Path, Path):
 
     # Output image transform
-    left, bottom, right, top = dst_bounds
-    xres = (right - left) / dst_width
-    yres = (top - bottom) / dst_height
-    dst_transform = Affine(xres, 0.0, left,
-                           0.0, -yres, top)
+    left, bottom, right, top = bounds
+    width = round((right - left) / pixres)
+    height = round((top - bottom) / pixres)
+    transform = Affine(pixres, 0.0, left,
+                       0.0, -pixres, top)
 
     vrt_options = {
         'resampling': Resampling.nearest,
-        'crs': dst_crs,
-        'transform': dst_transform,
-        'height': dst_height,
-        'width': dst_width,
+        'crs': 'ESRI:54009',
+        'transform': transform,
+        'height': height,
+        'width': width,
     }
 
-    # filter out phi files
-    files_class = [f for f in tiffiles if 'phi' not in f]
+    # init data
+    data = np.zeros(shape=(height, width), dtype=np.uint8)
+    data_phi = np.zeros(shape=(height, width), dtype=np.uint8)
 
-    data = np.zeros(shape=(dst_height, dst_width), dtype=np.uint8)
-    data_phi = np.zeros(shape=(dst_height, dst_width), dtype=np.uint8)
+    # filter class and phi files
+    files_phi = [f for f in tiffiles if '_phi' in str(f)]
+    files_class = [f.parent / f.name.replace('_phi', '') for f in files_phi]
 
     with rasterio.Env(GDAL_CACHEMAX=512):
-        for filename in files_class:
-            path_phi = filename.replace('.tif', '_phi.tif')
+        for fileclass, filephi in zip(files_class, files_phi):
 
             # find maximum values and indexes for phi values
-            with rasterio.open(path_phi) as src_phi:
+            with rasterio.open(filephi) as src_phi:
                 with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
                     next_phi = vrt_phi.read(1)
                     better_phi_domain = next_phi > data_phi
@@ -783,29 +846,36 @@ def generate_composite(tiffiles: List[str], vrtfile: Path, outfile: Path, outfil
                     data_phi[better_phi_domain] = next_phi[better_phi_domain]
 
             # use max phi indexes to select data
-            with rasterio.open(filename) as src:
+            with rasterio.open(fileclass) as src:
                 with WarpedVRT(src, **vrt_options) as vrt:
                     # Read all data into memory.
                     next_data = vrt.read(1)
                     data[better_phi_domain] = next_data[better_phi_domain]
 
         # Write output file
-        profile.update(
-            driver='GTiff',
-            compress='lzw',
-            interleave='band',
+        profile = DefaultGTiffProfile(
+            count=1,
+            width=width,
+            height=height,
+            crs='ESRI:54009',
+            transform=transform,
         )
 
         # write data
-        with rasterio.open(outfile, 'w', **profile) as dst:
+        composite_data = tiffiles[0].parent / f'composite_S2_CLASS_{pixres}m.tif'
+        with rasterio.open(composite_data, 'w', **profile) as dst:
             dst.write(data, 1)
 
         # write phi
-        with rasterio.open(outfilephi, 'w', **profile) as dst:
+        composite_phi = tiffiles[0].parent / f'composite_S2_CLASS_{pixres}m_phi.tif'
+        with rasterio.open(composite_phi, 'w', **profile) as dst:
             dst.write(data_phi, 1)
 
+    return composite_data, composite_phi
 
-def upsampling_20m_to_10m(filename: Path, resampling: str, outfile: Path) -> None:
+
+def upsampling_20m_to_10m(filename: Path, resampling: str) -> Path:
+    outfile = filename.parent / filename.name.replace('20m', '20m_to_10m')
     gdal.Translate(
         destName=str(outfile),
         srcDS=str(filename),
@@ -814,9 +884,10 @@ def upsampling_20m_to_10m(filename: Path, resampling: str, outfile: Path) -> Non
         resampleAlg=resampling,
     )
 
+    return outfile
 
-def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: Path, comp20m_phi: Path,
-                           outfile: Path, outfilephi: Path) -> None:
+
+def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: Path, comp20m_phi: Path) -> (Path, Path):
     # read and compare phi
     with rasterio.open(comp10m_phi) as c10m_phi:
         profile = c10m_phi.profile
@@ -838,69 +909,12 @@ def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: 
     x_data[better_phi_domain] = next_data[better_phi_domain]
 
     # Write output file
-    with rasterio.open(outfile, 'w', **profile) as c10mALL:
+    composite_all = comp10m_data.parent / comp10m_data.name.replace('10m', 'ALL')
+    with rasterio.open(composite_all, 'w', **profile) as c10mALL:
         c10mALL.write(x_data)
 
-    with rasterio.open(outfilephi, 'w', **profile) as c10mALLphi:
+    composite_all_phi = comp10m_phi.parent / comp10m_phi.name.replace('10m', 'ALL')
+    with rasterio.open(composite_all_phi, 'w', **profile) as c10mALLphi:
         c10mALLphi.write(x_phi)
 
-
-def generate_composites(files_20m: List[str], files_10m: List[str], output_path: Path) -> None:
-    logs('Build VRT 20m')
-    # Get AOI bounds
-    # create a vrt with all files_10m at 10m
-    # TODO: use all files_10m, some files_10m are skipped because of different projections
-    vrtfile_20m = output_path / 'S2CG_AOI_20m_py.vrt'
-    gdal.BuildVRT(str(vrtfile_20m), files_20m)
-
-    logs('Generate composite 20m')
-    composite_20m = output_path / 'composite_S2_CLASS_20m.tif'
-    composite_20m_phi = output_path / 'composite_S2_CLASS_20m_phi.tif'
-    generate_composite(
-        tiffiles=files_20m,
-        vrtfile=vrtfile_20m,
-        outfile=composite_20m,
-        outfilephi=composite_20m_phi,
-    )
-
-    logs('Upsample data 20m to 10m')
-    composite_20m_to_10m = output_path / 'composite_S2_CLASS_20m_to_10m.tif'
-    upsampling_20m_to_10m(
-        filename=composite_20m,
-        outfile=composite_20m_to_10m,
-        resampling='nearest',
-    )
-
-    logs('Upsample phi 20m to 10m')
-    composite_20m_to_10m_phi = output_path / 'composite_S2_CLASS_20m_to_10m_phi.tif'
-    upsampling_20m_to_10m(
-        filename=composite_20m_phi,
-        outfile=composite_20m_to_10m_phi,
-        resampling='bilinear',
-    )
-
-    logs('Build VRT 10m')
-    vrtfile_10m = output_path / 'S2CG_AOI_10m_py.vrt'
-    gdal.BuildVRT(str(vrtfile_10m), files_10m)
-
-    logs('Generate composite 10m')
-    composite_10m = output_path / 'composite_S2_CLASS_10m.tif'
-    composite_10m_phi = output_path / 'composite_S2_CLASS_10m_phi.tif'
-    generate_composite(
-        tiffiles=files_10m,
-        vrtfile=vrtfile_10m,
-        outfile=composite_10m,
-        outfilephi=composite_10m_phi,
-    )
-
-    logs('Merge in composite ALL')
-    composite_all = output_path / 'composite_S2_CLASS_ALL.tif'
-    composite_all_phi = output_path / 'composite_S2_CLASS_ALL_phi.tif'
-    generate_composite_all(
-        comp10m_data=composite_10m,
-        comp10m_phi=composite_10m_phi,
-        comp20m_data=composite_20m_to_10m,
-        comp20m_phi=composite_20m_to_10m_phi,
-        outfile=composite_all,
-        outfilephi=composite_all_phi,
-    )
+    return composite_all, composite_all_phi

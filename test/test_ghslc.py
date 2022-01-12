@@ -91,3 +91,19 @@ def test_class_generate(cgls_data):
     assert hash_file(results_20m_class[1]) == 'fb53ee76799c970676fc38064cbd4212'
     assert hash_file(results_20m_class[2]) == 'b1d4274951c15ee2b6fe9f5bd4529605'
     assert hash_file(results_20m_class[3]) == '437dbef70b2d52bfd37b2ccc9977b5ab'
+
+
+def test_class_composite():
+
+    workspace = Path('/Volumes/Data/Documents/JRC/workspace/luca.maffenini@ext.ec.europa.eu/d76c42d9-dcb6-4832-8300-1d281983a508')
+
+    files_lc_20m = list(workspace.glob('*bands_20m_dom*.tif'))
+    files_lc_10m = list(workspace.glob('*bands_10m_dom*.tif'))
+
+    ghslc.generate_composites(
+        files_10m=files_lc_10m,
+        files_20m=files_lc_20m,
+        output_path=workspace,
+    )
+
+    assert True
