@@ -1,13 +1,10 @@
 import pytest
 import yaml
-import requests
 import git
-from ghslc import ghslc
+import requests
 from pathlib import Path
 import hashlib
-from concurrent.futures import ProcessPoolExecutor
-import sys
-sys.path.append('..')
+from ghslc import ghslc
 
 
 def hash_file(filename):
@@ -19,14 +16,21 @@ def hash_file(filename):
 
 
 @pytest.fixture
-def cgls_data():
+def repopath():
     repo = git.Repo('', search_parent_directories=True)
     repo_root = repo.working_tree_dir
-    cgls_config = Path(repo_root) / 'training_CGLS.yml'
+    return Path(repo_root)
+
+
+@pytest.fixture
+def cgls_data(repopath):
+
+    # Get CGLS raster
+    cgls_config = repopath / 'training_CGLS.yml'
     with open(cgls_config) as conf:
         cgls = yaml.safe_load(conf)
 
-    # This is the same file used in training_CGLS.yml
+    # Read and adapt filename and relative path
     if cgls['filepath']:
         if cgls['filepath'].startswith('.'):
             cgls_file = cgls_config.parent / cgls['filepath'] / cgls['filename']
@@ -36,23 +40,41 @@ def cgls_data():
         cgls_file = Path(cgls['filename'])
 
     # download the file if missing
+    print(f'Using CGLS file: {cgls_file}')
     if not cgls_file.exists():
+        print('CGLS file not found! Downloading ...')
         cgls_file.parent.mkdir(parents=True, exist_ok=True)
         r = requests.get(cgls['url'])
+        print(f'CGLS file downloaded. Saving to {cgls_file}')
         with open(cgls_file, 'wb') as f:
             f.write(r.content)
 
     # check integrity using MD5 checksum
+    print('Check CGLS file MD5 checksum')
     assert hash_file(cgls_file) == '6898fbe3fb46a1110cd65e3a81ed7624'
 
+    return cgls_config
 
-def test_class_generate(cgls_data):
-    repo = git.Repo('', search_parent_directories=True)
-    repo_root = repo.working_tree_dir
 
-    training_config = Path(repo_root) / 'training_CGLS.yml'
+@pytest.fixture
+def s2_data(repopath):
+    s2_file = repopath / 'test' / 'data' / 'S2A_MSIL1C_20191210T101411_N0208_R022_T32TQM_20191210T104357.zip'
+    print(f'Using S2 file: {s2_file}')
+
+    if not s2_file.exists():
+        print('S2 file not found! Downloading ...')
+        r = requests.get(f'https://ghslsys.jrc.ec.europa.eu/download/ghslc_test_data/{s2_file.name}')
+        print(f'S2 file downloaded. Saving to {s2_file}')
+        with open(s2_file, 'wb') as f:
+            f.write(r.content)
+
+    return s2_file
+
+
+@pytest.fixture
+def target_classes():
     classes = [
-        80,  # Permanent water bodies
+        [80, 200],  # Permanent water bodies
         70,  # Snow and Ice
         60,  # Bare / sparse vegetation
         90,  # Herbaceous wetland
@@ -62,47 +84,28 @@ def test_class_generate(cgls_data):
         40,  # Cultivated and managed vegetation/agriculture (cropland)
         50,  # Urban / built up
     ]
-
-    # S2 data
-    granule = Path(repo_root) / 'test/data/S2A_MSIL1C_20191210T101411_N0208_R022_T32TQM_20191210T104357.SAFE'
-    print('S2 data: {}'.format(granule))
-
-    workspace = granule.parent
-    print('Workspace: {}'.format(workspace))
-
-    params = [
-        (granule, workspace, training_config, classes, 'A', 10),
-        (granule, workspace, training_config, classes, 'B', 10),
-        (granule, workspace, training_config, classes, 'A', 20),
-        (granule, workspace, training_config, classes, 'B', 20),
-    ]
-    with ProcessPoolExecutor(max_workers=4) as executor:
-        results = [res for res in executor.map(ghslc.generate_class, *zip(*params))]
-
-    results_10m_class = [item for sublist in results[:2] for item in sublist]
-    results_20m_class = [item for sublist in results[2:] for item in sublist]
-
-    assert hash_file(results_10m_class[0]) == '93f4d86d0ef622afde1a9491edf61910'
-    assert hash_file(results_10m_class[1]) == '6a306013099a5f39eaa7ad4c0b1cb6e2'
-    assert hash_file(results_10m_class[2]) == '236cbf81564ca941ee46660d97c087c5'
-    assert hash_file(results_10m_class[3]) == 'f2075dbc7d5aaabf2594299b73b27d87'
-
-    assert hash_file(results_20m_class[0]) == '44c71cd9d41aba6f17ea8071e135a3e1'
-    assert hash_file(results_20m_class[1]) == 'fb53ee76799c970676fc38064cbd4212'
-    assert hash_file(results_20m_class[2]) == 'b1d4274951c15ee2b6fe9f5bd4529605'
-    assert hash_file(results_20m_class[3]) == '437dbef70b2d52bfd37b2ccc9977b5ab'
+    return classes
 
 
-def test_class_composite():
+def test_class_generate_dom_a_res_10(cgls_data, s2_data, target_classes):
+    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'A', 10)
+    assert hash_file(res_class) == '1b72a5a5d4d9cd8593688927a4b507cf'
+    assert hash_file(res_phi) == '528bea4e04d8b33fa289aa938c37c75f'
 
-    workspace = Path('/Volumes/Data/Documents/JRC/workspace/luca.maffenini@ext.ec.europa.eu/d76c42d9-dcb6-4832-8300-1d281983a508')
 
-    files_lc_20m = list(workspace.glob('*bands_20m_dom*.tif'))
-    files_lc_10m = list(workspace.glob('*bands_10m_dom*.tif'))
+def test_class_generate_dom_b_res_10(cgls_data, s2_data, target_classes):
+    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'B', 10)
+    assert hash_file(res_class) == 'ab45e538957cdc5487589d7aaa9ba5ce'
+    assert hash_file(res_phi) == '29cf71f47f83c208801bf84a1ad39842'
 
-    ghslc.generate_composites(
-        files_10m=files_lc_10m,
-        files_20m=files_lc_20m,
-    )
 
-    assert True
+def test_class_generate_dom_a_res_20(cgls_data, s2_data, target_classes):
+    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'A', 20)
+    assert hash_file(res_class) == 'ae19f4181462067ee4f2006510136e9d'
+    assert hash_file(res_phi) == 'ff9033a5f62db960e0f492bb3614e633'
+
+
+def test_class_generate_dom_b_res_20(cgls_data, s2_data, target_classes):
+    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'B', 20)
+    assert hash_file(res_class) == '95f875dd8c49d02e3177095fde629fe3'
+    assert hash_file(res_phi) == '342e1f07cf79e1dfecba155acda53165'

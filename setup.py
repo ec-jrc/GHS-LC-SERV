@@ -15,6 +15,7 @@ setup(
     packages=find_packages(
         include=['ghslc', 'ghslc.*']
     ),
+    python_requires='>=3.7',
     install_requires=[
         'PyYAML',
         'rasterio',
@@ -23,12 +24,6 @@ setup(
         'pillow',
         'scipy',
         'scikit-image',
-    ],
-    setup_requires=['pytest-runner'],
-    tests_require=[
-        'pytest',
-        'gitpython',
-        'requests',
     ],
     license='GPLv3',
     classifiers=[

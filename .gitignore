@@ -3,3 +3,4 @@
 ghslc.egg-info
 __pycache__/
 test/data
+.tox
