@@ -171,8 +171,8 @@ def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path,
         tmp = Path(tmp)
 
         logs(f'Split in two domains and get domain: {suffix}')
-        # this is always done with the 10m data
-        domain = split_domain(filename=file_10m, suffix=suffix, pixres=pixres)
+        # this is always done with the both 10m and 20m data
+        domain = split_domain(file_10m=file_10m, file_20m=file_20m, suffix=suffix, pixres=pixres)
 
         class_file, class_phi_file = process_domain(datafile=main_vrt, suffix=suffix, domain=domain,
                                                     training=training, classes=classes, output=tmp)
@@ -184,11 +184,11 @@ def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path,
     return class_file, class_phi_file
 
 
-def split_domain(filename: Path, suffix: str, pixres: int) -> np.ndarray:
+def split_domain(file_10m: Path, file_20m: Path, suffix: str, pixres: int) -> np.ndarray:
     """
     Split the data in two domains A and B based on luminance
 
-    :param filename: Path
+    :param file_10m: Path
         the filename of the dataset composed by S2 10m bands
     :param suffix: str
         the letter of the processing domain: A or B
@@ -199,8 +199,8 @@ def split_domain(filename: Path, suffix: str, pixres: int) -> np.ndarray:
         the chosen domain A or B
     """
 
-    with rasterio.open(filename) as vrt:
-        data = vrt.read()
+    with rasterio.open(file_10m) as src_10m:
+        data = src_10m.read()
 
     # data domain
     domain = data.min(axis=0) > 0
@@ -214,9 +214,10 @@ def split_domain(filename: Path, suffix: str, pixres: int) -> np.ndarray:
     else:
         domain = np.logical_and(domain, luminance > thr_otsu)
 
+    # resize domain using 20m file size
     if pixres == 20:
-        shape_20m = [int(ds / 2) for ds in domain.shape]
-        domain = np.array(Image.fromarray(domain).resize(shape_20m[::-1], Image.NEAREST))
+        with rasterio.open(file_20m) as src_20m:
+            domain = np.array(Image.fromarray(domain).resize((src_20m.width, src_20m.height), Image.NEAREST))
 
     return domain
 
