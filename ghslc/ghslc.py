@@ -1,5 +1,6 @@
 from typing import Iterable, List
 from pathlib import Path
+import tempfile
 import zipfile
 from osgeo import gdal
 import rasterio
@@ -23,7 +24,25 @@ gdal.SetConfigOption('GDAL_CACHEMAX', '512')
 logs = print
 
 
-def generate_classification(filesafe: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
+def generate_classification_from_mosaics(file_10m: Path, file_20m: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
+
+    cl_a_10m_file, phi_a_10m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
+                                                   training=training, classes=classes, suffix='A', pixres=10)
+
+    cl_b_10m_file, phi_b_10m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
+                                                   training=training, classes=classes, suffix='B', pixres=10)
+
+    cl_a_20m_file, phi_a_20m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
+                                                   training=training, classes=classes, suffix='A', pixres=20)
+
+    cl_b_20m_file, phi_b_20m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
+                                                   training=training, classes=classes, suffix='B', pixres=20)
+
+    return (cl_a_10m_file, phi_a_10m_file, cl_b_10m_file, phi_b_10m_file,
+            cl_a_20m_file, phi_a_20m_file, cl_b_20m_file, phi_b_20m_file)
+
+
+def generate_classification_from_safe(filesafe: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
     """
     Generate classification results at 10 and 20 meters for both domains A and B
 
@@ -40,29 +59,29 @@ def generate_classification(filesafe: Path, workspace: Path, training: Path, cla
         the complete path to all classified results saved on disk
     """
 
-    cl_a_10m_file, phi_a_10m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
-                                                   classes=classes, suffix='A', pixres=10)
+    cl_a_10m_file, phi_a_10m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
+                                                             classes=classes, suffix='A', pixres=10)
 
-    cl_b_10m_file, phi_b_10m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
-                                                   classes=classes, suffix='B', pixres=10)
+    cl_b_10m_file, phi_b_10m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
+                                                             classes=classes, suffix='B', pixres=10)
 
-    cl_a_20m_file, phi_a_20m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
-                                                   classes=classes, suffix='A', pixres=20)
+    cl_a_20m_file, phi_a_20m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
+                                                             classes=classes, suffix='A', pixres=20)
 
-    cl_b_20m_file, phi_b_20m_file = generate_class(filesafe=filesafe, workspace=workspace, training=training,
-                                                   classes=classes, suffix='B', pixres=20)
+    cl_b_20m_file, phi_b_20m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
+                                                             classes=classes, suffix='B', pixres=20)
 
     return (cl_a_10m_file, phi_a_10m_file, cl_b_10m_file, phi_b_10m_file,
             cl_a_20m_file, phi_a_20m_file, cl_b_20m_file, phi_b_20m_file)
 
 
-def generate_class(filesafe: Path, workspace: Path, training: Path, classes: List[int], suffix: str, pixres: int,
-                   ) -> (Path, Path):
+def generate_class_from_safe(filesafe: Path, output: Path, training: Path, classes: List[int], suffix: str, pixres: int,
+                             ) -> (Path, Path):
     """
 
     :param filesafe: Path
         the complete filename of the Sentinel 2 data. It can be a .SAFE folder or a zip file
-    :param workspace: Path
+    :param output: Path
         the complete path where to store results
     :param training: Path
         the absolute path to the training_config configuration file
@@ -78,54 +97,45 @@ def generate_class(filesafe: Path, workspace: Path, training: Path, classes: Lis
     """
 
     logs('Create scratch folder')
-    scratch = workspace / f'{filesafe.stem}_scratch' / f'{pixres}m_{suffix}'
-    scratch.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(dir=output, prefix=f'{filesafe.stem}_scratch_{pixres}m_{suffix}_') as tmp:
+        tmp = Path(tmp)
+        vrt_10m_file = read_s2_bands_as_vrt(safe_file=filesafe, pixres=10, output=tmp)
+        vrt_20m_file = read_s2_bands_as_vrt(safe_file=filesafe, pixres=20, output=tmp)
 
-    logs('Create vrt with pixel resolution: 10m')
-    vrt_10m_file = scratch / f'{filesafe.stem}_bands_10m.vrt'
-    read_s2_bands_as_vrt(filename_safe=filesafe, pixres=10, out_vrt=vrt_10m_file)
+        class_file, class_phi_file = generate_class(file_10m=vrt_10m_file, file_20m=vrt_20m_file, output=tmp,
+                                                    training=training, classes=classes, suffix=suffix, pixres=pixres)
 
-    logs('Create vrt with pixel resolution: 20m')
-    vrt_20m_file = scratch / f'{filesafe.stem}_bands_20m.vrt'
-    read_s2_bands_as_vrt(filename_safe=filesafe, pixres=20, out_vrt=vrt_20m_file)
-
-    logs(f'Split in two domains and get domain: {suffix}')
-    # this is always done with the 10m data
-    domain = split_domain(filename=vrt_10m_file, suffix=suffix, pixres=pixres)
-
-    if pixres == 10:
-        main_vrt = vrt_10m_file
-    else:
-        main_vrt = vrt_20m_file
-
-    class_file, class_phi_file = process_domain(datafile=main_vrt, suffix=suffix, domain=domain,
-                                                training=training, classes=classes, output=scratch)
+        # Move results to workspace
+        class_file = class_file.replace(output / class_file.name)
+        class_phi_file = class_phi_file.replace(output / class_phi_file.name)
 
     return class_file, class_phi_file
 
 
-def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> None:
+def read_s2_bands_as_vrt(safe_file: Path, pixres: int, output: Path) -> Path:
     """
     Create a VRT dataset based on S2 bands
 
-    :param filename_safe: Path
+    :param safe_file: Path
         the complete filename of the Sentinel 2 SAFE product
     :param pixres: int
         the pixel size in meters used to filter bands:
         - 10: 'B02', 'B03', 'B04', 'B08'
         - 20: 'B05', 'B06', 'B07', 'B11', 'B12', 'B8A'
 
-    :param out_vrt: Path
+    :param output: Path
         the complete filename to use for the resulting VRT
     """
 
-    if filename_safe.suffix == '.zip':
-        with zipfile.ZipFile(filename_safe) as zf:
+    logs(f'Create vrt with pixel resolution: {pixres}m')
+
+    if safe_file.suffix == '.zip':
+        with zipfile.ZipFile(safe_file) as zf:
             jp2s_all = [
-                f'/vsizip/{filename_safe}/{zip_file}' for zip_file in zf.namelist() if zip_file.endswith('.jp2')
+                f'/vsizip/{safe_file}/{zip_file}' for zip_file in zf.namelist() if zip_file.endswith('.jp2')
             ]
     else:
-        jp2s_all = [str(file) for file in filename_safe.rglob('*.jp2')]
+        jp2s_all = [str(file) for file in safe_file.rglob('*.jp2')]
 
     if pixres == 10:
         bands = ['B02', 'B03', 'B04', 'B08']
@@ -134,11 +144,44 @@ def read_s2_bands_as_vrt(filename_safe: Path, pixres: int, out_vrt: Path) -> Non
 
     jp2s = [jp2 for jp2 in jp2s_all for band in bands if f'{band}.jp2' in jp2]
 
+    out_vrt = output / f'{safe_file.stem}_bands_{pixres}m.vrt'
+
     gdal.BuildVRT(
         destName=str(out_vrt),
         srcDSOrSrcDSTab=jp2s,
         separate=True, srcNodata=0, VRTNodata=0,
     )
+
+    if not out_vrt.exists():
+        raise FileExistsError(f'Failed to create vrt: {out_vrt}')
+
+    return out_vrt
+
+
+def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path, classes: List[int],
+                   suffix: str, pixres: int) -> (Path, Path):
+
+    if pixres == 10:
+        main_vrt = file_10m
+    else:
+        main_vrt = file_20m
+
+    # Work in temporary directory
+    with tempfile.TemporaryDirectory(dir=output, prefix=f'{main_vrt.stem}_') as tmp:
+        tmp = Path(tmp)
+
+        logs(f'Split in two domains and get domain: {suffix}')
+        # this is always done with the 10m data
+        domain = split_domain(filename=file_10m, suffix=suffix, pixres=pixres)
+
+        class_file, class_phi_file = process_domain(datafile=main_vrt, suffix=suffix, domain=domain,
+                                                    training=training, classes=classes, output=tmp)
+
+        # Move results to output folder
+        class_file = class_file.replace(output / class_file.name)
+        class_phi_file = class_phi_file.replace(output / class_phi_file.name)
+
+    return class_file, class_phi_file
 
 
 def split_domain(filename: Path, suffix: str, pixres: int) -> np.ndarray:
@@ -173,7 +216,7 @@ def split_domain(filename: Path, suffix: str, pixres: int) -> np.ndarray:
 
     if pixres == 20:
         shape_20m = [int(ds / 2) for ds in domain.shape]
-        domain = np.array(Image.fromarray(domain).resize(shape_20m, Image.NEAREST))
+        domain = np.array(Image.fromarray(domain).resize(shape_20m[::-1], Image.NEAREST))
 
     return domain
 
@@ -266,7 +309,7 @@ def process_domain(datafile: Path, suffix: str, domain: np.ndarray, training: Pa
 
     logs('Reconciling to a discrete CLASS')
     out_class_file, out_class_phi_file = search_maxima(
-        filename=datastack_class_file, domain_valid=domain, levels=256, output=output.parent,
+        filename=datastack_class_file, domain_valid=domain, levels=256, output=output,
     )
 
     return out_class_file, out_class_phi_file

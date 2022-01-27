@@ -26,14 +26,14 @@ def repopath():
 def cgls_data(repopath):
 
     # Get CGLS raster
-    cgls_config = repopath / 'training_CGLS.yml'
-    with open(cgls_config) as conf:
+    cgls_file = repopath / 'training_CGLS.yml'
+    with open(cgls_file) as conf:
         cgls = yaml.safe_load(conf)
 
     # Read and adapt filename and relative path
     if cgls['filepath']:
         if cgls['filepath'].startswith('.'):
-            cgls_file = cgls_config.parent / cgls['filepath'] / cgls['filename']
+            cgls_file = cgls_file.parent / cgls['filepath'] / cgls['filename']
         else:
             cgls_file = Path(cgls['filepath']) / cgls['filename']
     else:
@@ -53,7 +53,7 @@ def cgls_data(repopath):
     print('Check CGLS file MD5 checksum')
     assert hash_file(cgls_file) == '6898fbe3fb46a1110cd65e3a81ed7624'
 
-    return cgls_config
+    return cgls_file
 
 
 @pytest.fixture
@@ -88,24 +88,24 @@ def target_classes():
 
 
 def test_class_generate_dom_a_res_10(cgls_data, s2_data, target_classes):
-    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'A', 10)
+    res_class, res_phi = ghslc.generate_class_from_safe(s2_data, s2_data.parent, cgls_data, target_classes, 'A', 10)
     assert hash_file(res_class) == '1b72a5a5d4d9cd8593688927a4b507cf'
     assert hash_file(res_phi) == '528bea4e04d8b33fa289aa938c37c75f'
 
 
 def test_class_generate_dom_b_res_10(cgls_data, s2_data, target_classes):
-    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'B', 10)
+    res_class, res_phi = ghslc.generate_class_from_safe(s2_data, s2_data.parent, cgls_data, target_classes, 'B', 10)
     assert hash_file(res_class) == 'ab45e538957cdc5487589d7aaa9ba5ce'
     assert hash_file(res_phi) == '29cf71f47f83c208801bf84a1ad39842'
 
 
 def test_class_generate_dom_a_res_20(cgls_data, s2_data, target_classes):
-    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'A', 20)
+    res_class, res_phi = ghslc.generate_class_from_safe(s2_data, s2_data.parent, cgls_data, target_classes, 'A', 20)
     assert hash_file(res_class) == 'ae19f4181462067ee4f2006510136e9d'
     assert hash_file(res_phi) == 'ff9033a5f62db960e0f492bb3614e633'
 
 
 def test_class_generate_dom_b_res_20(cgls_data, s2_data, target_classes):
-    res_class, res_phi = ghslc.generate_class(s2_data, s2_data.parent, cgls_data, target_classes, 'B', 20)
+    res_class, res_phi = ghslc.generate_class_from_safe(s2_data, s2_data.parent, cgls_data, target_classes, 'B', 20)
     assert hash_file(res_class) == '95f875dd8c49d02e3177095fde629fe3'
     assert hash_file(res_phi) == '342e1f07cf79e1dfecba155acda53165'

@@ -5,6 +5,37 @@
 
 ## Quick start
 
+The classification can be done on S2 tiles (files zip or SAFE directories) or on S2 mosaics (GeoTIFF format).
+
+```python
+from pathlib import Path
+from ghslc import ghslc
+
+# Sentinel 2 file to classify
+s2_file = Path('S2A_MSIL1C_20191210T101411_N0208_R022_T32TQM_20191210T104357.zip')
+
+# Training configuration as yaml file
+training_file = Path('training_CGLS.yml')
+
+# Target classes to extract from the classification
+target_classes = [
+    [80, 200],  # Permanent water bodies
+    [111, 112, 113, 114, 115, 116, 121, 122, 123, 124, 125, 126],  # Forests
+    40,  # Cultivated and managed vegetation/agriculture (cropland)
+    50,  # Urban / built up
+]
+
+# Output folder
+output = Path('/tmp')
+
+results = ghslc.generate_classification_from_safe(
+    filesafe=s2_file,
+    workspace=output,
+    training=training_file,
+    classes=target_classes,
+)
+```
+
 
 ## Install
 The easier way to install dependencies is using [conda](https://docs.conda.io/en/latest/miniconda.html):
