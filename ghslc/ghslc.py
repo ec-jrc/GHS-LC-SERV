@@ -24,7 +24,25 @@ gdal.SetConfigOption('GDAL_CACHEMAX', '512')
 logs = print
 
 
-def generate_classification_from_mosaics(file_10m: Path, file_20m: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
+def generate_classification_from_mosaics(file_10m: Path, file_20m: Path, workspace: Path, training: Path,
+                                         classes: List[int]) -> Iterable[Path]:
+    """
+    Generate classification results at 10 and 20 meters for both domains A and B from S2 mosaics (GeoTIFF format)
+
+    :param file_10m: Path
+        the complete filename of the data at 10 meter pixel resolution in GeoTIFF format
+    :param file_20m: Path
+        the complete filename of the data at 10 meter pixel resolution in GeoTIFF format
+    :param workspace: Path
+        the complete path where to store results
+    :param training: Path
+        the absolute path to the training_config configuration file
+    :param classes: List[int]
+        the list of classes to extract from data
+
+    :return: Iterable[Path]
+        the complete path to all classified results saved on disk
+    """
 
     cl_a_10m_file, phi_a_10m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
                                                    training=training, classes=classes, suffix='A', pixres=10)
@@ -44,7 +62,7 @@ def generate_classification_from_mosaics(file_10m: Path, file_20m: Path, workspa
 
 def generate_classification_from_safe(filesafe: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
     """
-    Generate classification results at 10 and 20 meters for both domains A and B
+    Generate classification results at 10 and 20 meters for both domains A and B from a S2 input (.SAFE or .zip)
 
     :param filesafe: Path
         the complete filename of the Sentinel 2 data. It can be a .SAFE folder or a zip file
@@ -78,6 +96,7 @@ def generate_classification_from_safe(filesafe: Path, workspace: Path, training:
 def generate_class_from_safe(filesafe: Path, output: Path, training: Path, classes: List[int], suffix: str, pixres: int,
                              ) -> (Path, Path):
     """
+    Generate classification results at a given pixel resolution and for a given domain from a S2 input (.SAFE or .zip)
 
     :param filesafe: Path
         the complete filename of the Sentinel 2 data. It can be a .SAFE folder or a zip file
@@ -160,6 +179,27 @@ def read_s2_bands_as_vrt(safe_file: Path, pixres: int, output: Path) -> Path:
 
 def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path, classes: List[int],
                    suffix: str, pixres: int) -> (Path, Path):
+    """
+    Generate classification results at a given pixel resolution and at given domain from S2 mosaics (GeoTIFF format)
+
+    :param file_10m: Path
+        the complete filename of the data at 10 meter pixel resolution in GeoTIFF format
+    :param file_20m: Path
+        the complete filename of the data at 10 meter pixel resolution in GeoTIFF format
+    :param output: Path
+        the complete path where to store results
+    :param training: Path
+        the absolute path to the training_config configuration file
+    :param classes: List[int]
+        the list of classes to extract from data
+    :param suffix: str
+        the letter of the processing domain: A or B
+    :param pixres: int
+        the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
+
+    :return: (Path, Path)
+        the complete path to the classified file and the phi value file
+    """
 
     if pixres == 10:
         main_vrt = file_10m
@@ -190,6 +230,8 @@ def split_domain(file_10m: Path, file_20m: Path, suffix: str, pixres: int) -> np
 
     :param file_10m: Path
         the filename of the dataset composed by S2 10m bands
+    :param file_20m: Path
+        the filename of the dataset composed by S2 20m bands
     :param suffix: str
         the letter of the processing domain: A or B
     :param pixres: int
@@ -227,7 +269,7 @@ def threshold_otsu(image: np.ndarray) -> int:
     Compute image threshold using Otsu’s method as done in MATLAB's multithresh
 
     Check the official documentation: https://it.mathworks.com/help/images/ref/multithresh.html
-    The code is based on implementation for R2020b version, but it compute a single threshold value
+    The code is based on implementation for R2020b version, but it computes a single threshold value
 
     :param image: np.ndarray
         the image to threshold
@@ -775,7 +817,7 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
                     dst_phi.write(phi.astype(np.uint8), 1, window=block)
 
                     # set band 1 to value -100 because:
-                    # 1. otherwise when all values are NaN we get: "ValueError: All-NaN slice encountered"
+                    # 1. when all values are NaN we get: "ValueError: All-NaN slice encountered"
                     # 2. to get same behavior as MATLAB max: "If all elements are NaN, then max returns the first one"
                     data[0, np.isnan(data[0, :, :])] = -100
                     # add 1 to have labels starting from 1 instead of 0
@@ -787,10 +829,21 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
     return out_class, out_class_phi
 
 
-def generate_composites(files_20m: List[Path], files_10m: List[Path]) -> (Path, Path, Path, Path, Path, Path):
+def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterable[Path]:
+    """
+    Combine all classification results into several composites
+
+    :param files_10m: List[Path]
+        the list of classification results computed at 10 meter pixel resolution
+    :param files_20m: List[Path]
+        the list of classification results computed at 20 meter pixel resolution
+
+    :return: Iterable[Path]
+        the complete path to all composite results saved on disk
+    """
 
     # Get AOI bounds
-    bounds = common_extent_mollweide(files_20m=files_20m)
+    bounds = common_extent_mollweide(filenames=files_20m)
 
     logs('Generate composite 20m')
     composite_20m, composite_20m_phi = generate_composite(
@@ -835,12 +888,21 @@ def generate_composites(files_20m: List[Path], files_10m: List[Path]) -> (Path, 
             composite_all, composite_all_phi)
 
 
-def common_extent_mollweide(files_20m: List[Path]):
+def common_extent_mollweide(filenames: List[Path]) -> BoundingBox:
+    """
+    Compute the minimal extent/bounding box that enclose all the input georeferenced files
+
+    :param filenames:
+        the list of georeferenced files
+
+    :return: BoundingBox
+        the extent of the minimal bounding box
+    """
 
     # restrict the files list to the one with different S2 product names
     files_20m_unique_s2_names = []
     s2_names = set()
-    for file in files_20m:
+    for file in filenames:
         product_name = "_".join(file.stem.split('_')[:7])
         if product_name not in s2_names:
             s2_names.add(product_name)
@@ -865,6 +927,18 @@ def common_extent_mollweide(files_20m: List[Path]):
 
 
 def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -> (Path, Path):
+    """
+
+    :param tiffiles: List[Path]
+        the list of classification results to composite
+    :param pixres: int
+        the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
+    :param bounds: BoundingBox
+        the target spatial extent used to clip
+
+    :return: (Path, Path)
+         the complete path to the composites of the classification file and the phi value file
+    """
 
     # Output image transform
     left, bottom, right, top = bounds
@@ -930,6 +1004,18 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
 
 
 def upsampling_20m_to_10m(filename: Path, resampling: str) -> Path:
+    """
+    Upsample the input file to 10 meter pixel resolution
+
+    :param filename:
+        the complete filename of the data to upsample
+    :param resampling:
+        the resampling method
+
+    :return: Path
+        the input file upsampled to 10 meter pixel resolution
+    """
+
     outfile = filename.parent / filename.name.replace('20m', '20m_to_10m')
     gdal.Translate(
         destName=str(outfile),
@@ -943,6 +1029,22 @@ def upsampling_20m_to_10m(filename: Path, resampling: str) -> Path:
 
 
 def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: Path, comp20m_phi: Path) -> (Path, Path):
+    """
+    Blend 10 and 20 meters composite to generate a new one
+
+    :param comp10m_data: Path
+        the complete path to the composite of the classification at 10 meter pixel resolution
+    :param comp10m_phi: Path
+        the complete path to the composite of the phi values at 10 meter pixel resolution
+    :param comp20m_data: Path
+        the complete path to the composite of the classification at 20 meter pixel resolution
+    :param comp20m_phi: Path
+        the complete path to the composite of the phi values at 20 meter pixel resolution
+
+    :return: (Path, Path)
+         the complete path to the composites of the classification file and the phi value file
+    """
+
     # read and compare phi
     with rasterio.open(comp10m_phi) as c10m_phi:
         profile = c10m_phi.profile
