@@ -47,7 +47,7 @@ conda activate ghslc
 
 Install ghslc package:
 ```bash
-pip install -e .
+pip install ghslc
 ```
 
 
