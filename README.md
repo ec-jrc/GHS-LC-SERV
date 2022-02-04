@@ -41,7 +41,11 @@ results = ghslc.generate_classification_from_safe(
 The easier way to install dependencies is using [conda](https://docs.conda.io/en/latest/miniconda.html):
 
 ```bash
-conda create -f environment.yml
+conda env create -f environment.yml
+```
+
+Activate the conda environment:
+```bash
 conda activate ghslc
 ```
 
