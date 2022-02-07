@@ -35,14 +35,14 @@ def hash_file(filename):
     return file_hash.hexdigest()
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def repopath():
     repo = git.Repo('', search_parent_directories=True)
     repo_root = repo.working_tree_dir
     return Path(repo_root)
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def cgls_data(repopath):
 
     # Get CGLS raster
@@ -64,7 +64,7 @@ def cgls_data(repopath):
     return cgls_config_file
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def s2_data(repopath):
     s2_10m_file = repopath / 'test' / 'data' / 'SENTINEL2_L1C_10m.tif'
     check_and_download(s2_10m_file, 'b6cf7d6b27dd4b6c70fcd6cecdb7072e')
@@ -75,7 +75,7 @@ def s2_data(repopath):
     return s2_10m_file, s2_20m_file
 
 
-@pytest.fixture
+@pytest.fixture(scope='session')
 def target_classes():
     classes = [
         [80, 200],  # Permanent water bodies
