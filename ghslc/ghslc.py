@@ -1,20 +1,25 @@
-from typing import Iterable, List
-from pathlib import Path
+# Standard library imports
 import tempfile
+from typing import Iterable, List
+from packaging import version
+from pathlib import Path
+import warnings
 import zipfile
-from osgeo import gdal
-import rasterio
-from rasterio.profiles import DefaultGTiffProfile
-from rasterio.coords import BoundingBox
-from rasterio.enums import Resampling
-from rasterio.vrt import WarpedVRT
+
+# Third party imports
 from affine import Affine
+from osgeo import gdal
 import numpy as np
 from PIL import Image
-from skimage.morphology import binary_erosion
+import rasterio
+from rasterio.coords import BoundingBox
+from rasterio.enums import Resampling
+from rasterio.profiles import DefaultGTiffProfile
+from rasterio.vrt import WarpedVRT
 from scipy.ndimage import gaussian_filter
-import warnings
+from skimage.morphology import binary_erosion
 import yaml
+
 
 # set GDAL the python way
 gdal.UseExceptions()
@@ -125,10 +130,12 @@ def generate_class_from_safe(filesafe: Path, output: Path, training: Path, class
                                                     training=training, classes=classes, suffix=suffix, pixres=pixres)
 
         # Move results to workspace
-        class_file = class_file.replace(output / class_file.name)
-        class_phi_file = class_phi_file.replace(output / class_phi_file.name)
+        class_file_dst = output / class_file.name
+        class_file.replace(class_file_dst)
+        class_phi_file_dst = output / class_phi_file.name
+        class_phi_file.replace(class_phi_file_dst)
 
-    return class_file, class_phi_file
+    return class_file_dst, class_phi_file_dst
 
 
 def read_s2_bands_as_vrt(safe_file: Path, pixres: int, output: Path) -> Path:
@@ -218,10 +225,12 @@ def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path,
                                                     training=training, classes=classes, output=tmp)
 
         # Move results to output folder
-        class_file = class_file.replace(output / class_file.name)
-        class_phi_file = class_phi_file.replace(output / class_phi_file.name)
+        class_file_dst = output / class_file.name
+        class_file.replace(class_file_dst)
+        class_phi_file_dst = output / class_phi_file.name
+        class_phi_file.replace(class_phi_file_dst)
 
-    return class_file, class_phi_file
+    return class_file_dst, class_phi_file_dst
 
 
 def split_domain(file_10m: Path, file_20m: Path, suffix: str, pixres: int) -> np.ndarray:
@@ -402,8 +411,12 @@ def data_quantile(datafile: Path, suffix: str, domain: np.ndarray, nlevels: int,
                 logs(f'quantile band: {i}')
                 band = src.read(i)
 
-                q_min = np.quantile(band[domain], low_q, interpolation='lower')
-                q_max = np.quantile(band[domain], high_q, interpolation='higher')
+                if version.parse(np.__version__) < version.parse('1.22'):
+                    q_min = np.quantile(band[domain], low_q, interpolation='lower')
+                    q_max = np.quantile(band[domain], high_q, interpolation='higher')
+                else:
+                    q_min = np.quantile(band[domain], low_q, method='lower')
+                    q_max = np.quantile(band[domain], high_q, method='higher')
                 x_norm = np.round(imrscl(data=band, min_value=q_min, max_value=q_max) * (nlevels - 2))
 
                 dst.write(x_norm, i)
@@ -784,7 +797,7 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
         [1, 1, 1],
         [1, 1, 1]
     ])
-    nodata_mask = ~binary_erosion(domain_valid, selem=kernel)
+    nodata_mask = ~binary_erosion(domain_valid, footprint=kernel)
 
     with rasterio.open(filename) as src:
         profile = src.profile.copy()
