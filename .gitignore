@@ -3,4 +3,5 @@
 ghslc.egg-info
 __pycache__/
 test/data
+dist
 .tox
