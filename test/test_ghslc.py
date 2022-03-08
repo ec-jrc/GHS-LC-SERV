@@ -76,6 +76,39 @@ def s2_data(repopath):
 
 
 @pytest.fixture(scope='session')
+def s2_data_classified(repopath):
+    ref_path = repopath / 'test' / 'data' / 'reference'
+    if not ref_path.exists():
+        ref_path.mkdir(parents=True, exist_ok=True)
+
+    s2_10m_a_lc = ref_path / 'SENTINEL2_L1C_10m_domA_sml_LC.tif'
+    check_and_download(s2_10m_a_lc, 'a9fe361e3446e4ed086cdebd84aa8c54')
+
+    s2_10m_a_phi = ref_path / 'SENTINEL2_L1C_10m_domA_sml_LC_phi.tif'
+    check_and_download(s2_10m_a_phi, '09352998746cc9ac8c75ddacf0db453f')
+
+    s2_10m_b_lc = ref_path / 'SENTINEL2_L1C_10m_domB_sml_LC.tif'
+    check_and_download(s2_10m_b_lc, '83852e5cbbbe5ce0f8739841ec9f3a78')
+
+    s2_10m_b_phi = ref_path / 'SENTINEL2_L1C_10m_domB_sml_LC_phi.tif'
+    check_and_download(s2_10m_b_phi, '2369b619739054d521094134fdba2a86')
+
+    s2_20m_a_lc = ref_path / 'SENTINEL2_L1C_20m_domA_sml_LC.tif'
+    check_and_download(s2_20m_a_lc, '11389d555b40b1f1f9bbf66e40e7f336')
+
+    s2_20m_a_phi = ref_path / 'SENTINEL2_L1C_20m_domA_sml_LC_phi.tif'
+    check_and_download(s2_20m_a_phi, '47540134866e30727baddbd43abd3a63')
+
+    s2_20m_b_lc = ref_path / 'SENTINEL2_L1C_20m_domB_sml_LC.tif'
+    check_and_download(s2_20m_b_lc, 'b6a2a1e66d631ef48653fcf03da4b2bc')
+
+    s2_20m_b_phi = ref_path / 'SENTINEL2_L1C_20m_domB_sml_LC_phi.tif'
+    check_and_download(s2_20m_b_phi, '5ff3b036f7169508bc2a465a9b2bfe2f')
+
+    return s2_10m_a_lc, s2_10m_a_phi, s2_10m_b_lc, s2_10m_b_phi, s2_20m_a_lc, s2_20m_a_phi, s2_20m_b_lc, s2_20m_b_phi
+
+
+@pytest.fixture(scope='session')
 def target_classes():
     classes = [
         [80, 200],  # Permanent water bodies
@@ -145,3 +178,24 @@ def test_class_generate_dom_b_res_20(cgls_data, s2_data, target_classes):
     )
     assert hash_file(res_class) == 'b6a2a1e66d631ef48653fcf03da4b2bc'
     assert hash_file(res_phi) == '5ff3b036f7169508bc2a465a9b2bfe2f'
+
+
+def test_class_composite_results(s2_data_classified):
+
+    (res_comp_20m, res_comp_20m_phi, res_comp_20m_count,
+     res_comp_10m, res_comp_10m_phi, res_comp_10m_count,
+     res_comp_all, res_comp_all_phi) = ghslc.generate_composites(
+        files_10m=s2_data_classified[:4],
+        files_20m=s2_data_classified[4:],
+    )
+
+    assert hash_file(res_comp_20m) == '337f789006d304eb7cf5453013e7e7b6'
+    assert hash_file(res_comp_20m_phi) == '70d2b84792c2de908219e90f8fc611ca'
+    assert hash_file(res_comp_20m_count) == '269f524ee6226645593f130d61bca7d0'
+
+    assert hash_file(res_comp_10m) == 'c51da9167732ba210e1c5b4c96c02d93'
+    assert hash_file(res_comp_10m_phi) == 'f97ba804963304df3624b1c80fc34d6b'
+    assert hash_file(res_comp_10m_count) == 'd4b1b6b9e751c73c3adaa5fac49dc8c0'
+
+    assert hash_file(res_comp_all) == 'a69cf0c90cdd0545a857a98da5408a9d'
+    assert hash_file(res_comp_all_phi) == '0987277f42b10ae8a76b9abcecbe969c'

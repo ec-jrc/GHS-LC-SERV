@@ -859,7 +859,7 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterabl
     bounds = common_extent_mollweide(filenames=files_20m)
 
     logs('Generate composite 20m')
-    composite_20m, composite_20m_phi = generate_composite(
+    composite_20m, composite_20m_phi, composite_20m_count = generate_composite(
         tiffiles=files_20m,
         pixres=20,
         bounds=bounds,
@@ -882,7 +882,7 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterabl
         bounds_20m = src.bounds
 
     logs('Generate composite 10m')
-    composite_10m, composite_10m_phi = generate_composite(
+    composite_10m, composite_10m_phi, composite_10m_count = generate_composite(
         tiffiles=files_10m,
         pixres=10,
         bounds=bounds_20m,
@@ -896,8 +896,8 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterabl
         comp20m_phi=composite_20m_to_10m_phi,
     )
 
-    return (composite_20m, composite_20m_phi,
-            composite_10m, composite_10m_phi,
+    return (composite_20m, composite_20m_phi, composite_20m_count,
+            composite_10m, composite_10m_phi, composite_10m_count,
             composite_all, composite_all_phi)
 
 
@@ -971,6 +971,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
     # init data
     data = np.zeros(shape=(height, width), dtype=np.uint8)
     data_phi = np.zeros(shape=(height, width), dtype=np.uint8)
+    data_count = np.zeros(shape=(height, width), dtype=np.uint16)
 
     # filter class and phi files
     files_phi = [f for f in tiffiles if '_phi' in str(f)]
@@ -994,6 +995,9 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
                     next_data = vrt.read(1)
                     data[better_phi_domain] = next_data[better_phi_domain]
 
+            # count amount of data used for each pixel
+            data_count += better_phi_domain
+
         # Write output file
         profile = DefaultGTiffProfile(
             count=1,
@@ -1013,7 +1017,12 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
         with rasterio.open(composite_phi, 'w', **profile) as dst:
             dst.write(data_phi, 1)
 
-    return composite_data, composite_phi
+        # write data count
+        composite_count = tiffiles[0].parent / f'composite_S2_CLASS_{pixres}m_count.tif'
+        with rasterio.open(composite_count, 'w', **profile) as dst:
+            dst.write(data_count, 1)
+
+    return composite_data, composite_phi, composite_count
 
 
 def upsampling_20m_to_10m(filename: Path, resampling: str) -> Path:
