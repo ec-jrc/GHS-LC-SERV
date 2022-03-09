@@ -31,4 +31,4 @@ jobs:
     - name: Test with pytest
       run: |
         conda install pytest gitpython requests
-        pytest
+        python -m pytest
