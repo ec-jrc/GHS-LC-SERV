@@ -797,7 +797,7 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
         [1, 1, 1],
         [1, 1, 1]
     ])
-    nodata_mask = ~binary_erosion(domain_valid, footprint=kernel)
+    nodata_mask = ~binary_erosion(domain_valid, kernel)
 
     with rasterio.open(filename) as src:
         profile = src.profile.copy()
