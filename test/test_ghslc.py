@@ -30,7 +30,7 @@ def check_and_download(filename, md5):
 def hash_file(filename):
     with open(filename, 'rb') as f:
         file_hash = hashlib.md5()
-        for chunk in iter(lambda: f.read(8192), b''):
+        for chunk in iter(lambda: f.read(4096), b''):
             file_hash.update(chunk)
     return file_hash.hexdigest()
 
@@ -124,11 +124,20 @@ def target_classes():
     return classes
 
 
-def test_class_generate_dom_a_res_10(cgls_data, s2_data, target_classes):
+@pytest.fixture(scope='session')
+def artifacts(repopath):
+    artifacts_path = repopath / 'test' / 'data' / 'artifacts'
+    if not artifacts_path.exists():
+        artifacts_path.mkdir(parents=True, exist_ok=True)
+
+    return artifacts_path
+
+
+def test_class_generate_dom_a_res_10(cgls_data, s2_data, target_classes, artifacts):
     res_class, res_phi = ghslc.generate_class(
         file_10m=s2_data[0],
         file_20m=s2_data[1],
-        output=s2_data[0].parent,
+        output=artifacts,
         training=cgls_data,
         classes=target_classes,
         suffix='A',
@@ -138,11 +147,11 @@ def test_class_generate_dom_a_res_10(cgls_data, s2_data, target_classes):
     assert hash_file(res_phi) == '09352998746cc9ac8c75ddacf0db453f'
 
 
-def test_class_generate_dom_b_res_10(cgls_data, s2_data, target_classes):
+def test_class_generate_dom_b_res_10(cgls_data, s2_data, target_classes, artifacts):
     res_class, res_phi = ghslc.generate_class(
         file_10m=s2_data[0],
         file_20m=s2_data[1],
-        output=s2_data[0].parent,
+        output=artifacts,
         training=cgls_data,
         classes=target_classes,
         suffix='B',
@@ -152,11 +161,11 @@ def test_class_generate_dom_b_res_10(cgls_data, s2_data, target_classes):
     assert hash_file(res_phi) == '2369b619739054d521094134fdba2a86'
 
 
-def test_class_generate_dom_a_res_20(cgls_data, s2_data, target_classes):
+def test_class_generate_dom_a_res_20(cgls_data, s2_data, target_classes, artifacts):
     res_class, res_phi = ghslc.generate_class(
         file_10m=s2_data[0],
         file_20m=s2_data[1],
-        output=s2_data[0].parent,
+        output=artifacts,
         training=cgls_data,
         classes=target_classes,
         suffix='A',
@@ -166,11 +175,11 @@ def test_class_generate_dom_a_res_20(cgls_data, s2_data, target_classes):
     assert hash_file(res_phi) == '47540134866e30727baddbd43abd3a63'
 
 
-def test_class_generate_dom_b_res_20(cgls_data, s2_data, target_classes):
+def test_class_generate_dom_b_res_20(cgls_data, s2_data, target_classes, artifacts):
     res_class, res_phi = ghslc.generate_class(
         file_10m=s2_data[0],
         file_20m=s2_data[1],
-        output=s2_data[0].parent,
+        output=artifacts,
         training=cgls_data,
         classes=target_classes,
         suffix='B',
@@ -180,13 +189,14 @@ def test_class_generate_dom_b_res_20(cgls_data, s2_data, target_classes):
     assert hash_file(res_phi) == '5ff3b036f7169508bc2a465a9b2bfe2f'
 
 
-def test_class_composite_results(s2_data_classified):
+def test_class_composite_results(s2_data_classified, artifacts):
 
     (res_comp_20m, res_comp_20m_phi, res_comp_20m_count,
      res_comp_10m, res_comp_10m_phi, res_comp_10m_count,
      res_comp_all, res_comp_all_phi) = ghslc.generate_composites(
         files_10m=s2_data_classified[:4],
         files_20m=s2_data_classified[4:],
+        output=artifacts,
     )
 
     assert hash_file(res_comp_20m) == '337f789006d304eb7cf5453013e7e7b6'

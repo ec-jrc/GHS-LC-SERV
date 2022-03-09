@@ -842,7 +842,7 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
     return out_class, out_class_phi
 
 
-def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterable[Path]:
+def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Path) -> Iterable[Path]:
     """
     Combine all classification results into several composites
 
@@ -850,6 +850,9 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterabl
         the list of classification results computed at 10 meter pixel resolution
     :param files_20m: List[Path]
         the list of classification results computed at 20 meter pixel resolution
+
+    :param output: Path
+        the complete path where to write results
 
     :return: Iterable[Path]
         the complete path to all composite results saved on disk
@@ -863,6 +866,7 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterabl
         tiffiles=files_20m,
         pixres=20,
         bounds=bounds,
+        output=output,
     )
 
     logs('Upsample data 20m to 10m')
@@ -886,6 +890,7 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path]) -> Iterabl
         tiffiles=files_10m,
         pixres=10,
         bounds=bounds_20m,
+        output=output,
     )
 
     logs('Merge in composite ALL')
@@ -939,7 +944,7 @@ def common_extent_mollweide(filenames: List[Path]) -> BoundingBox:
     return envelope
 
 
-def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -> (Path, Path):
+def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, output: Path) -> (Path, Path):
     """
 
     :param tiffiles: List[Path]
@@ -948,6 +953,9 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
         the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
     :param bounds: BoundingBox
         the target spatial extent used to clip
+
+    :param output: Path
+        the complete path where to write results
 
     :return: (Path, Path)
          the complete path to the composites of the classification file and the phi value file
@@ -1008,17 +1016,17 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox) -
         )
 
         # write data
-        composite_data = tiffiles[0].parent / f'composite_S2_CLASS_{pixres}m.tif'
+        composite_data = output / f'composite_S2_CLASS_{pixres}m.tif'
         with rasterio.open(composite_data, 'w', **profile) as dst:
             dst.write(data, 1)
 
         # write phi
-        composite_phi = tiffiles[0].parent / f'composite_S2_CLASS_{pixres}m_phi.tif'
+        composite_phi = output / f'composite_S2_CLASS_{pixres}m_phi.tif'
         with rasterio.open(composite_phi, 'w', **profile) as dst:
             dst.write(data_phi, 1)
 
         # write data count
-        composite_count = tiffiles[0].parent / f'composite_S2_CLASS_{pixres}m_count.tif'
+        composite_count = output / f'composite_S2_CLASS_{pixres}m_stack_count.tif'
         with rasterio.open(composite_count, 'w', **profile) as dst:
             dst.write(data_count, 1)
 
