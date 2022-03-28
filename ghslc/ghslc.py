@@ -872,13 +872,13 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Pa
     logs('Upsample data 20m to 10m')
     composite_20m_to_10m = upsampling_20m_to_10m(
         filename=composite_20m,
-        resampling='nearest',
+        resampling='bilinear',
     )
 
     logs('Upsample phi 20m to 10m')
     composite_20m_to_10m_phi = upsampling_20m_to_10m(
         filename=composite_20m_phi,
-        resampling='nearest',
+        resampling='bilinear',
     )
 
     # get bounds of data resampled from 20m to 10m as they might be slightly larger due to resampling
