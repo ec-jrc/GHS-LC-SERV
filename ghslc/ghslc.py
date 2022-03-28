@@ -1013,6 +1013,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
             height=height,
             crs='ESRI:54009',
             transform=transform,
+            nodata=None,
         )
 
         # write data
