@@ -842,7 +842,7 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
     return out_class, out_class_phi
 
 
-def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Path) -> Iterable[Path]:
+def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Path, threshold_phi=0) -> Iterable[Path]:
     """
     Combine all classification results into several composites
 
@@ -853,6 +853,8 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Pa
 
     :param output: Path
         the complete path where to write results
+    :param threshold_phi: float
+        the minimum phi value to consider the classification valid. It can be any float value between -1 and 1
 
     :return: Iterable[Path]
         the complete path to all composite results saved on disk
@@ -867,12 +869,13 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Pa
         pixres=20,
         bounds=bounds,
         output=output,
+        threshold_phi=threshold_phi,
     )
 
     logs('Upsample data 20m to 10m')
     composite_20m_to_10m = upsampling_20m_to_10m(
         filename=composite_20m,
-        resampling='bilinear',
+        resampling='nearest',
     )
 
     logs('Upsample phi 20m to 10m')
@@ -891,6 +894,7 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Pa
         pixres=10,
         bounds=bounds_20m,
         output=output,
+        threshold_phi=threshold_phi,
     )
 
     logs('Merge in composite ALL')
@@ -899,6 +903,7 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Pa
         comp10m_phi=composite_10m_phi,
         comp20m_data=composite_20m_to_10m,
         comp20m_phi=composite_20m_to_10m_phi,
+        threshold_phi=threshold_phi,
     )
 
     return (composite_20m, composite_20m_phi, composite_20m_count,
@@ -944,7 +949,8 @@ def common_extent_mollweide(filenames: List[Path]) -> BoundingBox:
     return envelope
 
 
-def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, output: Path) -> (Path, Path):
+def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, output: Path, threshold_phi=0
+                       ) -> (Path, Path):
     """
 
     :param tiffiles: List[Path]
@@ -953,6 +959,8 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
         the pixel resolution to filter Sentinel 2 bands, it can be 10 or 20 (meters)
     :param bounds: BoundingBox
         the target spatial extent used to clip
+    :param threshold_phi: float
+        the minimum phi value to consider the classification valid. It can be any float value between -1 and 1
 
     :param output: Path
         the complete path where to write results
@@ -976,17 +984,24 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
         'width': width,
     }
 
-    # init data
-    data = np.zeros(shape=(height, width), dtype=np.uint8)
-    data_phi = np.zeros(shape=(height, width), dtype=np.uint8)
-    data_count = np.zeros(shape=(height, width), dtype=np.uint16)
-
     # filter class and phi files
     files_phi = [f for f in tiffiles if '_phi' in str(f)]
     files_class = [f.parent / f.name.replace('_phi', '') for f in files_phi]
 
+    # init data
+    with rasterio.open(files_phi[0]) as src_phi:
+        with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
+            data_phi = vrt_phi.read(1)
+
+    with rasterio.open(files_class[0]) as src:
+        with WarpedVRT(src, **vrt_options) as vrt:
+            data = vrt.read(1)
+
+    data_count = np.zeros(shape=(height, width), dtype=np.uint16)
+    data_count += data_phi > -1
+
     with rasterio.Env(GDAL_CACHEMAX=512):
-        for fileclass, filephi in zip(files_class, files_phi):
+        for fileclass, filephi in zip(files_class[1:], files_phi[1:]):
 
             # find maximum values and indexes for phi values
             with rasterio.open(filephi) as src_phi:
@@ -1005,6 +1020,14 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
 
             # count amount of data used for each pixel
             data_count += better_phi_domain
+
+        # apply minimum threshold (converted to uint8 value range)
+        threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (0, 255)))
+        # data below the threshold is set to 0 (the "don't know" value)
+        nodata_index = data_phi < threshold_phi_uint8
+        data_phi[nodata_index] = 0
+        data[nodata_index] = 0
+        data_count[nodata_index] = 0
 
         # Write output file
         profile = DefaultGTiffProfile(
@@ -1059,7 +1082,9 @@ def upsampling_20m_to_10m(filename: Path, resampling: str) -> Path:
     return outfile
 
 
-def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: Path, comp20m_phi: Path) -> (Path, Path):
+def generate_composite_all(comp10m_data: Path, comp10m_phi: Path,
+                           comp20m_data: Path, comp20m_phi: Path,
+                           threshold_phi=0) -> (Path, Path):
     """
     Blend 10 and 20 meters composite to generate a new one
 
@@ -1078,11 +1103,17 @@ def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: 
 
     # read and compare phi
     with rasterio.open(comp10m_phi) as c10m_phi:
-        profile = c10m_phi.profile
+        profile = c10m_phi.profile.copy()
         x_phi = c10m_phi.read()
 
     with rasterio.open(comp20m_phi) as c20m_phi:
         next_phi = c20m_phi.read()
+
+    # apply minimum threshold (converted to uint8 value range)
+    threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (0, 255)))
+    # data below the threshold is set to 0 (the "don't know" value)
+    nodata_index = next_phi < threshold_phi_uint8
+    next_phi[nodata_index] = 0
 
     better_phi_domain = next_phi > x_phi
     x_phi[better_phi_domain] = next_phi[better_phi_domain]
@@ -1097,6 +1128,10 @@ def generate_composite_all(comp10m_data: Path, comp10m_phi: Path, comp20m_data: 
     x_data[better_phi_domain] = next_data[better_phi_domain]
 
     # Write output file
+    profile.update(
+        nodata=None,
+    )
+
     composite_all = comp10m_data.parent / comp10m_data.name.replace('10m', 'ALL')
     with rasterio.open(composite_all, 'w', **profile) as c10mALL:
         c10mALL.write(x_data)
