@@ -30,7 +30,7 @@ logs = print
 
 
 def generate_classification_from_mosaics(file_10m: Path, file_20m: Path, workspace: Path, training: Path,
-                                         classes: List[int]) -> Iterable[Path]:
+                                         classes: List[int], minimal_support=100) -> Iterable[Path]:
     """
     Generate classification results at 10 and 20 meters for both domains A and B from S2 mosaics (GeoTIFF format)
 
@@ -44,28 +44,35 @@ def generate_classification_from_mosaics(file_10m: Path, file_20m: Path, workspa
         the absolute path to the training_config configuration file
     :param classes: List[int]
         the list of classes to extract from data
+    :param minimal_support: int
+        the minimal support value can be any integer (default is 100)
 
     :return: Iterable[Path]
         the complete path to all classified results saved on disk
     """
 
     cl_a_10m_file, phi_a_10m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
-                                                   training=training, classes=classes, suffix='A', pixres=10)
+                                                   training=training, classes=classes, minimal_support=minimal_support,
+                                                   suffix='A', pixres=10)
 
     cl_b_10m_file, phi_b_10m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
-                                                   training=training, classes=classes, suffix='B', pixres=10)
+                                                   training=training, classes=classes, minimal_support=minimal_support,
+                                                   suffix='B', pixres=10)
 
     cl_a_20m_file, phi_a_20m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
-                                                   training=training, classes=classes, suffix='A', pixres=20)
+                                                   training=training, classes=classes, minimal_support=minimal_support,
+                                                   suffix='A', pixres=20)
 
     cl_b_20m_file, phi_b_20m_file = generate_class(file_10m=file_10m, file_20m=file_20m, output=workspace,
-                                                   training=training, classes=classes, suffix='B', pixres=20)
+                                                   training=training, classes=classes, minimal_support=minimal_support,
+                                                   suffix='B', pixres=20)
 
     return (cl_a_10m_file, phi_a_10m_file, cl_b_10m_file, phi_b_10m_file,
             cl_a_20m_file, phi_a_20m_file, cl_b_20m_file, phi_b_20m_file)
 
 
-def generate_classification_from_safe(filesafe: Path, workspace: Path, training: Path, classes: List[int]) -> Iterable[Path]:
+def generate_classification_from_safe(filesafe: Path, workspace: Path, training: Path, classes: List[int],
+                                      minimal_support=100) -> Iterable[Path]:
     """
     Generate classification results at 10 and 20 meters for both domains A and B from a S2 input (.SAFE or .zip)
 
@@ -77,29 +84,35 @@ def generate_classification_from_safe(filesafe: Path, workspace: Path, training:
         the absolute path to the training_config configuration file
     :param classes: List[int]
         the list of classes to extract from data
+    :param minimal_support: int
+        the minimal support value can be any integer (default is 100)
 
     :return: Iterable[Path]
         the complete path to all classified results saved on disk
     """
 
     cl_a_10m_file, phi_a_10m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
-                                                             classes=classes, suffix='A', pixres=10)
+                                                             classes=classes, minimal_support=minimal_support,
+                                                             suffix='A', pixres=10)
 
     cl_b_10m_file, phi_b_10m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
-                                                             classes=classes, suffix='B', pixres=10)
+                                                             classes=classes, minimal_support=minimal_support,
+                                                             suffix='B', pixres=10)
 
     cl_a_20m_file, phi_a_20m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
-                                                             classes=classes, suffix='A', pixres=20)
+                                                             classes=classes, minimal_support=minimal_support,
+                                                             suffix='A', pixres=20)
 
     cl_b_20m_file, phi_b_20m_file = generate_class_from_safe(filesafe=filesafe, output=workspace, training=training,
-                                                             classes=classes, suffix='B', pixres=20)
+                                                             classes=classes, minimal_support=minimal_support,
+                                                             suffix='B', pixres=20)
 
     return (cl_a_10m_file, phi_a_10m_file, cl_b_10m_file, phi_b_10m_file,
             cl_a_20m_file, phi_a_20m_file, cl_b_20m_file, phi_b_20m_file)
 
 
-def generate_class_from_safe(filesafe: Path, output: Path, training: Path, classes: List[int], suffix: str, pixres: int,
-                             ) -> (Path, Path):
+def generate_class_from_safe(filesafe: Path, output: Path, training: Path, classes: List[int],
+                             minimal_support: int, suffix: str, pixres: int) -> (Path, Path):
     """
     Generate classification results at a given pixel resolution and for a given domain from a S2 input (.SAFE or .zip)
 
@@ -111,6 +124,8 @@ def generate_class_from_safe(filesafe: Path, output: Path, training: Path, class
         the absolute path to the training_config configuration file
     :param classes: List[int]
         the list of classes to extract from data
+    :param minimal_support: int
+        the minimal support value
     :param suffix: str
         the letter of the processing domain: A or B
     :param pixres: int
@@ -127,7 +142,8 @@ def generate_class_from_safe(filesafe: Path, output: Path, training: Path, class
         vrt_20m_file = read_s2_bands_as_vrt(safe_file=filesafe, pixres=20, output=tmp)
 
         class_file, class_phi_file = generate_class(file_10m=vrt_10m_file, file_20m=vrt_20m_file, output=tmp,
-                                                    training=training, classes=classes, suffix=suffix, pixres=pixres)
+                                                    training=training, classes=classes, minimal_support=minimal_support,
+                                                    suffix=suffix, pixres=pixres)
 
         # Move results to workspace
         class_file_dst = output / class_file.name
@@ -185,7 +201,7 @@ def read_s2_bands_as_vrt(safe_file: Path, pixres: int, output: Path) -> Path:
 
 
 def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path, classes: List[int],
-                   suffix: str, pixres: int) -> (Path, Path):
+                   suffix: str, pixres: int, minimal_support=100) -> (Path, Path):
     """
     Generate classification results at a given pixel resolution and at given domain from S2 mosaics (GeoTIFF format)
 
@@ -199,6 +215,8 @@ def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path,
         the absolute path to the training_config configuration file
     :param classes: List[int]
         the list of classes to extract from data
+    :param minimal_support: int
+        the minimal support value can be any integer (default is 100)
     :param suffix: str
         the letter of the processing domain: A or B
     :param pixres: int
@@ -222,7 +240,8 @@ def generate_class(file_10m: Path, file_20m: Path, output: Path, training: Path,
         domain = split_domain(file_10m=file_10m, file_20m=file_20m, suffix=suffix, pixres=pixres)
 
         class_file, class_phi_file = process_domain(datafile=main_vrt, suffix=suffix, domain=domain,
-                                                    training=training, classes=classes, output=tmp)
+                                                    training=training, classes=classes, minimal_support=minimal_support,
+                                                    output=tmp)
 
         # Move results to output folder
         class_file_dst = output / class_file.name
@@ -318,7 +337,7 @@ def threshold_otsu(image: np.ndarray) -> int:
 
 
 def process_domain(datafile: Path, suffix: str, domain: np.ndarray, training: Path, classes: List[int],
-                   output: Path) -> (Path, Path):
+                   minimal_support: int, output: Path) -> (Path, Path):
     """
     Produce classification results for a given domain
 
@@ -332,6 +351,8 @@ def process_domain(datafile: Path, suffix: str, domain: np.ndarray, training: Pa
         the absolute path to the training_config configuration file
     :param classes: List[int]
         the list of classes to extract from data
+    :param minimal_support: int
+        the minimal support value
 
     :param output: Path
         the complete path where to write results
@@ -350,7 +371,7 @@ def process_domain(datafile: Path, suffix: str, domain: np.ndarray, training: Pa
     domain_minsupp, datastack_mulquan = sml_minimal_support_multiple_quantization(
         datafile=dataquant_file,
         levels=256,
-        minimal_support=100,
+        minimal_support=minimal_support,
         multiple_quantization=quantizations,
     )
 
@@ -854,7 +875,8 @@ def generate_composites(files_10m: List[Path], files_20m: List[Path], output: Pa
     :param output: Path
         the complete path where to write results
     :param threshold_phi: float
-        the minimum phi value to consider the classification valid. It can be any float value between -1 and 1
+        the minimum phi value to consider the classification valid.
+        It can be any float value between -1 and 1 (default is 0)
 
     :return: Iterable[Path]
         the complete path to all composite results saved on disk
@@ -949,7 +971,7 @@ def common_extent_mollweide(filenames: List[Path]) -> BoundingBox:
     return envelope
 
 
-def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, output: Path, threshold_phi=0
+def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, output: Path, threshold_phi: float
                        ) -> (Path, Path):
     """
 
@@ -1092,7 +1114,7 @@ def upsampling_20m_to_10m(filename: Path, resampling: str) -> Path:
 
 def generate_composite_all(comp10m_data: Path, comp10m_phi: Path,
                            comp20m_data: Path, comp20m_phi: Path,
-                           threshold_phi=0) -> (Path, Path):
+                           threshold_phi: float) -> (Path, Path):
     """
     Blend 10 and 20 meters composite to generate a new one
 
@@ -1104,6 +1126,8 @@ def generate_composite_all(comp10m_data: Path, comp10m_phi: Path,
         the complete path to the composite of the classification at 20 meter pixel resolution
     :param comp20m_phi: Path
         the complete path to the composite of the phi values at 20 meter pixel resolution
+    :param threshold_phi: float
+        the minimum phi value to consider the classification valid. It can be any float value between -1 and 1
 
     :return: (Path, Path)
          the complete path to the composites of the classification file and the phi value file
