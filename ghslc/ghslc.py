@@ -651,9 +651,6 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
         height=height,
     )
 
-    sigma = 0.5
-    trunc = np.ceil(2 * sigma) / sigma
-
     for cl, layer in zip(classes, layers):
         logs(f'produce inference for abstraction class with codes: {cl}')
         train_mask = np.isin(train_cgls, cl)
@@ -668,11 +665,9 @@ def s2_multiple_classification(datafile: Path, suffix: str, domain_valid: np.nda
         else:
             phi = np.full(shape=domain_valid.shape, fill_value=np.nan)
 
-        sc_phi = gaussian_filter(phi, sigma=sigma, truncate=trunc)
-
         logs(f'save to file: {layer}')
         with rasterio.open(layer, 'w', **profile) as band:
-            band.write(sc_phi, 1)
+            band.write(phi, 1)
 
     datastack_class_file = output / f'{datafile.stem}_dom{suffix}_sml.vrt'
     gdal.BuildVRT(
@@ -993,10 +988,14 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
     files_phi = [f for f in tiffiles if '_phi' in str(f)]
     files_class = [f.parent / f.name.replace('_phi', '') for f in files_phi]
 
+    sigma = 0.5
+    trunc = np.ceil(2 * sigma) / sigma
+
     # init data
     with rasterio.open(files_phi[0]) as src_phi:
         with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
-            data_phi = vrt_phi.read(1)
+            # smooth the phi values with gaussian filter
+            data_phi = gaussian_filter(vrt_phi.read(1), sigma=sigma, truncate=trunc)
 
     with rasterio.open(files_class[0]) as src:
         with WarpedVRT(src, **vrt_options) as vrt:
@@ -1011,7 +1010,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
             # find maximum values and indexes for phi values
             with rasterio.open(filephi) as src_phi:
                 with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
-                    next_phi = vrt_phi.read(1)
+                    next_phi = gaussian_filter(vrt_phi.read(1), sigma=sigma, truncate=trunc)
                     better_phi_domain = next_phi > data_phi
 
                     data_phi[better_phi_domain] = next_phi[better_phi_domain]
