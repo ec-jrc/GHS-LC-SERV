@@ -382,7 +382,7 @@ def process_domain(datafile: Path, suffix: str, domain: np.ndarray, training: Pa
 
     logs('Reconciling to a discrete CLASS')
     out_class_file, out_class_phi_file = search_maxima(
-        filename=datastack_class_file, domain_valid=domain, levels=200, output=output,
+        filename=datastack_class_file, domain_valid=domain, levels=256, output=output,
     )
 
     return out_class_file, out_class_phi_file
@@ -824,15 +824,10 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
             count=1,
         )
 
-        profile_phi = profile.copy()
-        profile_phi.update(
-            nodata=255,
-        )
-
         out_class = output / f'{filename.stem}_LC.tif'
         out_class_phi = output / f'{filename.stem}_LC_phi.tif'
         with rasterio.open(out_class, 'w', **profile) as dst_c:
-            with rasterio.open(out_class_phi, 'w', **profile_phi) as dst_phi:
+            with rasterio.open(out_class_phi, 'w', **profile) as dst_phi:
                 for ji, block in src.block_windows(1):
                     # get data and nodata mask by window block
                     data = src.read(window=block)
@@ -843,10 +838,10 @@ def search_maxima(filename: Path, domain_valid: np.ndarray, levels: int, output:
                     warnings.filterwarnings(action='ignore', message='All-NaN slice encountered')
                     phi = np.nanmax(data, axis=0)
                     warnings.resetwarnings()
-                    # rescale in uint8 while keeping 255 for nodata
-                    phi = np.round(imrscl(data=phi, min_value=-1, max_value=1) * levels)
-                    phi[np.isnan(phi)] = 255
-                    phi[block_mask] = 255
+                    # rescale in uint8 while keeping 0 for nodata
+                    phi = np.round(imrscl(data=phi, min_value=-1, max_value=1) * (levels - 2)) + 1
+                    phi[np.isnan(phi)] = 0
+                    phi[block_mask] = 0
 
                     dst_phi.write(phi.astype(np.uint8), 1, window=block)
 
@@ -1017,13 +1012,8 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
     with rasterio.open(files_phi[0]) as src_phi:
         with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
             nodata = vrt_phi.nodata
-            data_phi = vrt_phi.read(1)
-            nodata_mask = data_phi == nodata
             # smooth the phi values with gaussian filter
-            data_phi[nodata_mask] = 0
-            data_phi = gaussian_filter(data_phi, sigma=sigma, truncate=trunc)
-            # set back nodata
-            data_phi[nodata_mask] = nodata
+            data_phi = gaussian_filter(vrt_phi.read(1), sigma=sigma, truncate=trunc)
 
     with rasterio.open(files_class[0]) as src:
         with WarpedVRT(src, **vrt_options) as vrt:
@@ -1038,11 +1028,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
             # find maximum values and indexes for phi values
             with rasterio.open(filephi) as src_phi:
                 with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
-                    next_phi = vrt_phi.read(1)
-                    nodata_mask = next_phi == nodata
-                    # smooth the phi values with gaussian filter
-                    next_phi[nodata_mask] = 0
-                    next_phi = gaussian_filter(next_phi, sigma=sigma, truncate=trunc)
+                    next_phi = gaussian_filter(vrt_phi.read(1), sigma=sigma, truncate=trunc)
                     better_phi_domain = next_phi > data_phi
 
                     data_phi[better_phi_domain] = next_phi[better_phi_domain]
@@ -1058,7 +1044,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
             data_count += better_phi_domain
 
         # apply minimum threshold (converted to uint8 value range)
-        threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (0, 255)))
+        threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (1, 255)))
         # data below the threshold is set to 0 (the "don't know" value)
         nodata_index = data_phi < threshold_phi_uint8
         data_phi[nodata_index] = 0
@@ -1088,7 +1074,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
         # write phi
         profile_phi = profile.copy()
         profile_phi.update(
-            nodata=255,
+            nodata=0,
         )
         composite_phi = output / f'composite_S2_CLASS_{pixres}m_phi.tif'
         with rasterio.open(composite_phi, 'w', **profile_phi) as dst:
@@ -1152,7 +1138,7 @@ def generate_composite_all(comp10m_data: Path, comp10m_phi: Path,
         next_phi = c20m_phi.read()
 
     # apply minimum threshold (converted to uint8 value range)
-    threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (0, 255)))
+    threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (1, 255)))
     # data below the threshold is set to 0 (the "don't know" value)
     nodata_index = next_phi < threshold_phi_uint8
     next_phi[nodata_index] = 0
