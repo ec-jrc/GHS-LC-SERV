@@ -5,7 +5,7 @@ with open('README.md', 'r', encoding='utf-8') as readme:
 
 setup(
     name='ghslc',
-    version='0.1.8',
+    version='0.1.10',
     author='Luca Maffenini',
     author_email='jrc-ghsl-tools@ec.europa.eu',
     description='GHSL Land Cover python module',

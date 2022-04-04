@@ -1016,15 +1016,21 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
     # init data
     with rasterio.open(files_phi[0]) as src_phi:
         with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
+            nodata = vrt_phi.nodata
+            data_phi = vrt_phi.read(1)
+            nodata_mask = data_phi == nodata
             # smooth the phi values with gaussian filter
-            data_phi = gaussian_filter(vrt_phi.read(1), sigma=sigma, truncate=trunc)
+            data_phi[nodata_mask] = 0
+            data_phi = gaussian_filter(data_phi, sigma=sigma, truncate=trunc)
+            # set back nodata
+            data_phi[nodata_mask] = nodata
 
     with rasterio.open(files_class[0]) as src:
         with WarpedVRT(src, **vrt_options) as vrt:
             data = vrt.read(1)
 
     data_count = np.zeros(shape=(height, width), dtype=np.uint16)
-    data_count += data_phi > -1
+    data_count += data_phi != nodata
 
     with rasterio.Env(GDAL_CACHEMAX=512):
         for fileclass, filephi in zip(files_class[1:], files_phi[1:]):
@@ -1032,7 +1038,11 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
             # find maximum values and indexes for phi values
             with rasterio.open(filephi) as src_phi:
                 with WarpedVRT(src_phi, **vrt_options) as vrt_phi:
-                    next_phi = gaussian_filter(vrt_phi.read(1), sigma=sigma, truncate=trunc)
+                    next_phi = vrt_phi.read(1)
+                    nodata_mask = next_phi == nodata
+                    # smooth the phi values with gaussian filter
+                    next_phi[nodata_mask] = 0
+                    next_phi = gaussian_filter(next_phi, sigma=sigma, truncate=trunc)
                     better_phi_domain = next_phi > data_phi
 
                     data_phi[better_phi_domain] = next_phi[better_phi_domain]
@@ -1081,7 +1091,7 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
             nodata=255,
         )
         composite_phi = output / f'composite_S2_CLASS_{pixres}m_phi.tif'
-        with rasterio.open(composite_phi, 'w', **profile) as dst:
+        with rasterio.open(composite_phi, 'w', **profile_phi) as dst:
             dst.write(data_phi, 1)
 
     return composite_data, composite_phi, composite_count
