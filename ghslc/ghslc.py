@@ -1045,9 +1045,10 @@ def generate_composite(tiffiles: List[Path], pixres: int, bounds: BoundingBox, o
 
         # apply minimum threshold (converted to uint8 value range)
         threshold_phi_uint8 = np.round(np.interp(threshold_phi, (-1, 1), (1, 255)))
-        # data below the threshold is set to 0 (the "don't know" value)
+        # data below the threshold is set to 0 (the "don't know" value in the -1:1 range)
         nodata_index = data_phi < threshold_phi_uint8
-        data_phi[nodata_index] = 0
+        data_phi[nodata_index] = np.round(np.interp(0, (-1, 1), (1, 255)))
+
         data[nodata_index] = 0
         data_count[nodata_index] = 0
 
