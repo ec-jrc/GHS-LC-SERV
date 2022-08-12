@@ -62,14 +62,22 @@ Simply install [tox](https://tox.wiki/en/latest/#what-is-tox) with:
 pip install tox
 ```
 
-Then type:
+Then run the tests in python 3.10:
+```bash
+tox -e py310
+```
+
+This will build, install and test the project in a dedicated python 3.10 environment with all needed dependencies.
+The tests should take few minutes to complete.
+
+If you want to run it for all supported python versions type:
 ```bash
 tox
 ```
 
-This will build, install and test the project in a dedicate environment with all needed dependencies.
+This takes longer, but it should be less than 30 minutes.
 
-The tests could take around 40 minutes to complete for each python version.
+
 
 # Licensing
 This project is licensed under the [GPLv3](http://www.gnu.org/licenses/gpl-3.0.html) License.

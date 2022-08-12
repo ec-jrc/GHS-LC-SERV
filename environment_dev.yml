@@ -1,0 +1,18 @@
+name: ghslc-dev
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3
+  - pip
+  - pyyaml
+  - rasterio
+  - GDAL
+  - numpy
+  - pillow
+  - scipy
+  - scikit-image
+  # required for test and development
+  - pytest
+  - gitpython
+  - requests

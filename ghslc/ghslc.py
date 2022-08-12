@@ -287,7 +287,12 @@ def split_domain(file_10m: Path, file_20m: Path, suffix: str, pixres: int) -> np
     # resize domain using 20m file size
     if pixres == 20:
         with rasterio.open(file_20m) as src_20m:
-            domain = np.array(Image.fromarray(domain).resize((src_20m.width, src_20m.height), Image.NEAREST))
+            domain = np.array(
+                Image.fromarray(domain).resize(
+                    size=(src_20m.width, src_20m.height),
+                    resample=Image.Resampling.NEAREST,
+                )
+            )
 
     return domain
 
@@ -565,7 +570,7 @@ def sml_sequence_encode(x: np.ndarray, base: int) -> np.ndarray:
     for ii in range(num_layers):
         sequence_encoded += np.multiply(x[ii, :], powers[ii], dtype=np.uint64, casting='unsafe')
 
-    if sequence_encoded.max() > np.iinfo(np.uint64).max:
+    if sequence_encoded.max() >= np.iinfo(np.uint64).max:
         raise ValueError('Not enough numbers for encoding all the potential sequences!'
                          '\nReduce the number of levels or the number of layers')
 
